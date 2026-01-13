@@ -117,7 +117,29 @@ create table if not exists public.messages (
   created_at timestamp with time zone default timezone('utc'::text, now())
 );
 
--- 11. Security (RLS)
+-- 11. Farmer's Khata (Ledger)
+create table if not exists public.ledger_entries (
+  id uuid default uuid_generate_v4() primary key,
+  user_id uuid references public.profiles(id) on delete cascade,
+  title text not null,
+  amount numeric not null,
+  type text check (type in ('income', 'expense')),
+  category text,
+  created_at timestamp with time zone default timezone('utc'::text, now())
+);
+
+-- 12. KhetGo Academy (Learning Content)
+create table if not exists public.academy_content (
+  id uuid default uuid_generate_v4() primary key,
+  title text not null,
+  description text,
+  video_url text,
+  thumbnail_url text,
+  category text,
+  created_at timestamp with time zone default timezone('utc'::text, now())
+);
+
+-- 13. Security (RLS)
 alter table public.profiles enable row level security;
 alter table public.mandi_prices enable row level security;
 alter table public.listings enable row level security;
@@ -127,6 +149,8 @@ alter table public.forum_posts enable row level security;
 alter table public.news_articles enable row level security;
 alter table public.bookings enable row level security;
 alter table public.messages enable row level security;
+alter table public.ledger_entries enable row level security;
+alter table public.academy_content enable row level security;
 
 -- Policies (Basic)
 create policy "Select Prof" on public.profiles for select using (true);
@@ -143,8 +167,11 @@ create policy "Select Book" on public.bookings for select using (auth.uid() = us
 create policy "Insert Book" on public.bookings for insert with check (auth.role() = 'authenticated');
 create policy "Select Msg" on public.messages for select using (auth.uid() = sender_id or auth.uid() = receiver_id);
 create policy "Insert Msg" on public.messages for insert with check (auth.uid() = sender_id);
+create policy "Select Ledger" on public.ledger_entries for select using (auth.uid() = user_id);
+create policy "Insert Ledger" on public.ledger_entries for insert with check (auth.uid() = user_id);
+create policy "Select Acad" on public.academy_content for select using (true);
 
--- SEED DATA
+-- 14. SEED DATA
 insert into public.mandi_prices (crop, price, change_pct, trend) values 
 ('Wheat', 2450, '+2.1%', 'up'),
 ('Mustard', 5600, '-1.4%', 'down'),

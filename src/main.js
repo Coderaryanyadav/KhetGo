@@ -28,10 +28,21 @@ let state = {
   services: [],
   news: [],
   forumPosts: [],
+  ledgerEntries: [],
+  academyContent: [],
   messages: [],
+  language: 'en', // 'en', 'hi', 'mr'
   activeChat: null,
   isLoading: false
 };
+
+const translations = {
+  en: { dashboard: 'Dashboard', marketplace: 'Marketplace', rentals: 'Rentals', advisor: 'AI Advisor', khata: 'Ledger', academy: 'Academy', community: 'Agri-Forum', activity: 'Activity' },
+  hi: { dashboard: 'डैशबोर्ड', marketplace: 'बाजार', rentals: 'किराया', advisor: 'एआई सलाहकार', khata: 'बहीखाता', academy: 'अकादमी', community: 'कृषि-मंच', activity: 'गतिविधि' },
+  mr: { dashboard: 'डॅशबोर्ड', marketplace: 'बाजारपेठ', rentals: 'भाड्याने', advisor: 'एआय सल्लागार', khata: 'खातेवही', academy: 'अकादमी', community: 'कृषी-मंच', activity: 'हालचाल' }
+};
+
+const t = (key) => translations[state.language][key] || key;
 
 // --- Auth Handling ---
 async function checkAuth() {
@@ -93,7 +104,9 @@ async function fetchAllData() {
       supabase.from('store_products').select('*').order('created_at', { ascending: false }),
       supabase.from('agri_services').select('*').order('created_at', { ascending: false }),
       supabase.from('news_articles').select('*').order('created_at', { ascending: false }),
-      supabase.from('forum_posts').select('*').order('created_at', { ascending: false })
+      supabase.from('forum_posts').select('*').order('created_at', { ascending: false }),
+      supabase.from('ledger_entries').select('*').order('created_at', { ascending: false }),
+      supabase.from('academy_content').select('*').order('created_at', { ascending: false })
     ];
 
     const results = await Promise.all(fetchers);
@@ -105,6 +118,8 @@ async function fetchAllData() {
     state.services = results[4].data || [];
     state.news = results[5].data || [];
     state.forumPosts = results[6].data || [];
+    state.ledgerEntries = results[7].data || [];
+    state.academyContent = results[8].data || [];
 
   } catch (err) {
     console.error('Real Data Sync Error:', err.message);
@@ -144,51 +159,44 @@ const Sidebar = () => `
     <nav class="nav-links">
       <div class="nav-link ${state.currentView === 'dashboard' ? 'active' : ''}" data-view="dashboard">
         <i class="fa-solid fa-chart-pie"></i>
-        <span>Dashboard</span>
+        <span>${t('dashboard')}</span>
       </div>
       <div class="nav-link ${state.currentView === 'marketplace' ? 'active' : ''}" data-view="marketplace">
         <i class="fa-solid fa-shop"></i>
-        <span>Marketplace</span>
-      </div>
-      <div class="nav-link ${state.currentView === 'add-listing' ? 'active' : ''}" data-view="add-listing">
-        <i class="fa-solid fa-circle-plus"></i>
-        <span>Add Listing</span>
+        <span>${t('marketplace')}</span>
       </div>
       <div class="nav-link ${state.currentView === 'services' ? 'active' : ''}" data-view="services">
         <i class="fa-solid fa-truck-pickup"></i>
-        <span>Rentals</span>
+        <span>${t('rentals')}</span>
       </div>
-      <div class="nav-link ${state.currentView === 'agri-store' ? 'active' : ''}" data-view="agri-store">
-        <i class="fa-solid fa-bag-shopping"></i>
-        <span>Agri Store</span>
+      <div class="nav-link ${state.currentView === 'advisor' ? 'active' : ''}" data-view="advisor">
+        <i class="fa-solid fa-robot"></i>
+        <span>${t('advisor')}</span>
       </div>
-      <div class="nav-link ${state.currentView === 'mandi-markets' ? 'active' : ''}" data-view="mandi-markets">
-        <i class="fa-solid fa-chart-line"></i>
-        <span>Mandi Prices</span>
+      <div class="nav-link ${state.currentView === 'khata' ? 'active' : ''}" data-view="khata">
+        <i class="fa-solid fa-book"></i>
+        <span>${t('khata')}</span>
       </div>
-      <div class="nav-link ${state.currentView === 'news' ? 'active' : ''}" data-view="news">
-        <i class="fa-solid fa-newspaper"></i>
-        <span>Agri-Buzz</span>
-      </div>
-      <div class="nav-link ${state.currentView === 'inbox' ? 'active' : ''}" data-view="inbox">
-        <i class="fa-solid fa-message"></i>
-        <span>Messages</span>
+      <div class="nav-link ${state.currentView === 'academy' ? 'active' : ''}" data-view="academy">
+        <i class="fa-solid fa-graduation-cap"></i>
+        <span>${t('academy')}</span>
       </div>
       <div class="nav-link ${state.currentView === 'forum' ? 'active' : ''}" data-view="forum">
         <i class="fa-solid fa-users"></i>
-        <span>Community</span>
+        <span>${t('community')}</span>
       </div>
       <div class="nav-link ${state.currentView === 'my-activity' ? 'active' : ''}" data-view="my-activity">
-        <i class="fa-solid fa-chart-pie"></i>
-        <span>Activity & Insights</span>
+        <i class="fa-solid fa-clock-rotate-left"></i>
+        <span>${t('activity')}</span>
       </div>
-      ${state.profile?.role === 'admin' ? `
-        <div class="nav-link ${state.currentView === 'admin' ? 'active' : ''}" data-view="admin">
-          <i class="fa-solid fa-user-shield"></i>
-          <span>Admin Panel</span>
-        </div>
-      ` : ''}
     </nav>
+    <div style="padding: 1rem; border-top: 1px solid rgba(255,255,255,0.1);">
+       <select onchange="window.setLanguage(this.value)" style="width:100%; padding:8px; border-radius:8px; background:rgba(255,255,255,0.1); color:white; border:none; outline:none; font-size: 0.8rem;">
+          <option value="en" ${state.language === 'en' ? 'selected' : ''}>English</option>
+          <option value="hi" ${state.language === 'hi' ? 'selected' : ''}>हिन्दी</option>
+          <option value="mr" ${state.language === 'mr' ? 'selected' : ''}>मराठी</option>
+       </select>
+    </div>
     <div class="sidebar-footer" style="margin-top: auto; padding-top: 2rem; border-top: 1px solid rgba(255,255,255,0.1);">
       <div style="margin-bottom: 1.5rem;">
         <div style="font-weight: 700; font-size: 0.95rem; color: var(--accent); cursor: pointer;" onclick="window.setView('profile')">${state.profile?.full_name || 'User'}</div>
@@ -929,6 +937,141 @@ const NewsView = () => {
   `;
 };
 
+const AdvisorView = () => `
+  <div class="fade-in">
+    ${Header('AI Agri-Advisor')}
+    <div class="dashboard-grid">
+      <section>
+        <div class="glass-card" style="margin-bottom: 2rem; background: #EEF2FF; border: 1px solid #C7D2FE;">
+          <h2 style="color: #4338CA; margin-bottom: 1rem;"><i class="fa-solid fa-wand-sparkles"></i> Smart Diagnosis</h2>
+          <p style="color: #4B5563;">Describe the issue your crop is facing (e.g., 'Yellow spots on tomato leaves' or 'Pests in wheat field') and our AI will provide instant guidance.</p>
+        </div>
+
+        <div class="glass-card">
+          <textarea id="advisor-query" style="width:100%; height:150px; padding:1.5rem; border-radius:15px; border:1px solid #ddd; outline:none; font-size:1.05rem;" placeholder="Type your query here..."></textarea>
+          <button class="btn-primary" style="width:100%; margin-top:1.5rem; padding:18px;" onclick="window.askAdvisor()">Get Expert Advice</button>
+        </div>
+
+        <div id="advisor-result" style="margin-top:2rem;"></div>
+      </section>
+      <aside>
+        <div class="glass-card">
+          <h3 style="margin-bottom: 1rem;">Recent Consultations</h3>
+          <p style="font-size: 0.85rem; color: grey;">Your previous AI diagnostic reports will appear here.</p>
+        </div>
+      </aside>
+    </div>
+  </div>
+`;
+
+const KhataView = () => {
+  const totalIncome = state.ledgerEntries.filter(e => e.type === 'income').reduce((acc, e) => acc + e.amount, 0);
+  const totalExpense = state.ledgerEntries.filter(e => e.type === 'expense').reduce((acc, e) => acc + e.amount, 0);
+  const balance = totalIncome - totalExpense;
+
+  return `
+    <div class="fade-in">
+      ${Header("Farmer's Digital Khata")}
+      <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem; margin-bottom: 2.5rem;">
+        <div class="glass-card" style="border-bottom: 4px solid #10B981;">
+          <div style="color: grey; font-size: 0.85rem;">Total Income</div>
+          <div style="font-size: 1.5rem; font-weight: 800; color: #065F46;">₹${totalIncome.toLocaleString()}</div>
+        </div>
+        <div class="glass-card" style="border-bottom: 4px solid #EF4444;">
+          <div style="color: grey; font-size: 0.85rem;">Total Expenses</div>
+          <div style="font-size: 1.5rem; font-weight: 800; color: #991B1B;">₹${totalExpense.toLocaleString()}</div>
+        </div>
+        <div class="glass-card" style="border-bottom: 4px solid var(--primary);">
+          <div style="color: grey; font-size: 0.85rem;">Net Profit</div>
+          <div style="font-size: 1.5rem; font-weight: 800; color: var(--primary);">₹${balance.toLocaleString()}</div>
+        </div>
+      </div>
+
+      <div class="dashboard-grid">
+        <section>
+          <div class="glass-card" style="margin-bottom: 2rem;">
+            <h3 style="margin-bottom: 1.5rem;">Add New Transaction</h3>
+            <form id="khata-form" style="display:grid; grid-template-columns: 1fr 1fr; gap:1rem;">
+              <input type="text" name="title" placeholder="Description (e.g. Sold Wheat)" required style="padding:12px; border-radius:10px; border:1px solid #ddd;">
+              <input type="number" name="amount" placeholder="Amount (₹)" required style="padding:12px; border-radius:10px; border:1px solid #ddd;">
+              <select name="type" style="padding:12px; border-radius:10px; border:1px solid #ddd;">
+                <option value="income">Income (+)</option>
+                <option value="expense">Expense (-)</option>
+              </select>
+              <button type="submit" class="btn-primary">Record Entry</button>
+            </form>
+          </div>
+
+          <div class="glass-card">
+            <h3 style="margin-bottom: 1.5rem;">Recent Logs</h3>
+            ${state.ledgerEntries.map(e => `
+              <div class="mandi-item">
+                <div>
+                  <div style="font-weight:700;">${e.title}</div>
+                  <div style="font-size:0.8rem; color:grey;">${new Date(e.created_at).toLocaleDateString()}</div>
+                </div>
+                <div style="font-weight:800; color: ${e.type === 'income' ? '#10B981' : '#EF4444'};">
+                  ${e.type === 'income' ? '+' : '-'} ₹${e.amount}
+                </div>
+              </div>
+            `).join('') || '<p style="text-align:center; color:grey;">No entries found.</p>'}
+          </div>
+        </section>
+      </div>
+    </div>
+  `;
+};
+
+const AcademyView = () => `
+  <div class="fade-in">
+    ${Header('KhetGo Academy')}
+    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 2rem;">
+      ${state.academyContent.map(v => `
+        <div class="crop-card">
+          <div style="position:relative;">
+            <img src="${v.thumbnail_url}" class="crop-image" style="height:200px;">
+            <div style="position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); font-size:3rem; color:white; opacity:0.8; cursor:pointer;" onclick="window.open('${v.video_url}')">
+              <i class="fa-solid fa-circle-play"></i>
+            </div>
+          </div>
+          <div class="crop-details">
+            <span style="font-size:0.75rem; color:var(--secondary); font-weight:700;">${v.category}</span>
+            <h3 style="margin: 8px 0; font-size:1.1rem;">${v.title}</h3>
+            <p style="font-size:0.85rem; color:grey;">Learn professional techniques to double your yield.</p>
+          </div>
+        </div>
+      `).join('') || '<p>Academy content loading...</p>'}
+    </div>
+  </div>
+`;
+
+window.setLanguage = (lang) => {
+  state.language = lang;
+  render();
+};
+
+window.askAdvisor = () => {
+  const query = document.getElementById('advisor-query').value.trim();
+  if (!query) return;
+  const resultDiv = document.getElementById('advisor-result');
+  resultDiv.innerHTML = '<div class="glass-card">Thinking... <i class="fa-solid fa-spinner fa-spin"></i></div>';
+
+  setTimeout(() => {
+    resultDiv.innerHTML = `
+      <div class="glass-card fade-in" style="border-left: 5px solid var(--primary);">
+        <h3 style="margin-bottom: 1rem;"><i class="fa-solid fa-notes-medical"></i> Advisor Recommendation</h3>
+        <p style="line-height:1.6;">Based on your query "<strong>${query}</strong>", here is my advice:</p>
+        <ul style="margin: 1rem 0; padding-left: 1.5rem;">
+          <li>Maintain soil moisture between 60-70%.</li>
+          <li>Apply Nitrogen-based fertilizer if yellowing persists.</li>
+          <li>Check for pests under the leaves during early morning.</li>
+        </ul>
+        <div style="font-size: 0.8rem; color: grey; font-style: italic;">Disclaimer: This is an automated suggestion. Consult a local official for critical issues.</div>
+      </div>
+    `;
+  }, 1500);
+};
+
 const AdminView = () => `
   <div class="fade-in">
     ${Header('Platform Moderation')}
@@ -1107,6 +1250,9 @@ function render() {
     case 'chat': content = ChatView(); break;
     case 'inbox': content = InboxView(); break;
     case 'forum': content = ForumView(); break;
+    case 'advisor': content = AdvisorView(); break;
+    case 'khata': content = KhataView(); break;
+    case 'academy': content = AcademyView(); break;
     case 'profile': content = ProfileView(); break;
     case 'news': content = NewsView(); break;
     case 'agri-store': content = AgriStoreView(); break;
@@ -1270,6 +1416,25 @@ function bindEvents() {
 
   // Dashboard & Market Charts
   initCharts();
+
+  // Khata Form
+  const khataForm = document.getElementById('khata-form');
+  if (khataForm) {
+    khataForm.onsubmit = async (e) => {
+      e.preventDefault();
+      const d = new FormData(khataForm);
+      const { error } = await supabase.from('ledger_entries').insert([{
+        user_id: state.user.id,
+        title: d.get('title'),
+        amount: parseFloat(d.get('amount')),
+        type: d.get('type')
+      }]);
+      if (!error) {
+        alert('Entry Recorded!');
+        fetchAllData();
+      }
+    };
+  }
 }
 
 function initCharts() {
