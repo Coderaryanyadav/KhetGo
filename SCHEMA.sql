@@ -21,7 +21,7 @@ create table if not exists public.profiles (
 -- 3. Mandi Prices (Live Feed)
 create table if not exists public.mandi_prices (
   id uuid default uuid_generate_v4() primary key,
-  crop text not null,
+  crop text unique not null,
   price numeric not null,
   unit text default 'Quintal',
   trend text check (trend in ('up', 'down', 'stable')),
@@ -50,10 +50,21 @@ create table if not exists public.listings (
   created_at timestamp with time zone default timezone('utc'::text, now())
 );
 
+-- Ensure columns exist if table was already created
+do $$ 
+begin 
+  if not exists (select 1 from information_schema.columns where table_name='listings' and column_name='lat') then
+    alter table public.listings add column lat numeric;
+  end if;
+  if not exists (select 1 from information_schema.columns where table_name='listings' and column_name='lng') then
+    alter table public.listings add column lng numeric;
+  end if;
+end $$;
+
 -- 5. Agri Services (Rentals)
 create table if not exists public.agri_services (
   id uuid default uuid_generate_v4() primary key,
-  title text not null,
+  title text unique not null,
   type text,
   price_per_day numeric,
   provider_id uuid references public.profiles(id),
@@ -65,7 +76,7 @@ create table if not exists public.agri_services (
 -- 6. Agri Store (Products)
 create table if not exists public.store_products (
   id uuid default uuid_generate_v4() primary key,
-  name text not null,
+  name text unique not null,
   brand text,
   price numeric not null,
   unit text,
@@ -90,13 +101,33 @@ create table if not exists public.forum_posts (
 -- 8. News Articles (Agri-Buzz)
 create table if not exists public.news_articles (
   id uuid default uuid_generate_v4() primary key,
-  title text not null,
+  title text unique not null,
   content text,
   category text,
   image_url text,
   author_name text default 'KhetGo Editor',
   created_at timestamp with time zone default timezone('utc'::text, now())
 );
+
+-- Ensure unique constraints for idempotent seeding
+do $$ 
+begin 
+  if not exists (select 1 from information_schema.table_constraints where table_name='mandi_prices' and constraint_type='UNIQUE') then
+    alter table public.mandi_prices add constraint mandi_prices_crop_unique unique (crop);
+  end if;
+  if not exists (select 1 from information_schema.table_constraints where table_name='news_articles' and constraint_type='UNIQUE') then
+    alter table public.news_articles add constraint news_articles_title_unique unique (title);
+  end if;
+  if not exists (select 1 from information_schema.table_constraints where table_name='store_products' and constraint_type='UNIQUE') then
+    alter table public.store_products add constraint store_products_name_unique unique (name);
+  end if;
+  if not exists (select 1 from information_schema.table_constraints where table_name='agri_services' and constraint_type='UNIQUE') then
+    alter table public.agri_services add constraint agri_services_title_unique unique (title);
+  end if;
+  if not exists (select 1 from information_schema.table_constraints where table_name='academy_content' and constraint_type='UNIQUE') then
+    alter table public.academy_content add constraint academy_content_title_unique unique (title);
+  end if;
+end $$;
 
 -- 9. Bookings & Orders
 create table if not exists public.bookings (
@@ -206,19 +237,28 @@ create policy "Insert Ledger" on public.ledger_entries for insert with check (au
 drop policy if exists "Select Acad" on public.academy_content;
 create policy "Select Acad" on public.academy_content for select using (true);
 
--- 14. SEED DATA
+-- 14. SEED DATA (Idempotent)
 insert into public.mandi_prices (crop, price, change_pct, trend) values 
 ('Wheat', 2450, '+2.1%', 'up'),
 ('Mustard', 5600, '-1.4%', 'down'),
-('Potato', 1200, '+0.5%', 'up');
+('Potato', 1200, '+0.5%', 'up')
+on conflict (crop) do nothing;
 
 insert into public.news_articles (title, category, image_url) values 
 ('New Fertilizer Subsidy Announced', 'Policy', 'https://images.unsplash.com/photo-1628350210274-3c82b33b0394?auto=format&fit=crop&q=80&w=400'),
-('Organic Farming Workshop in Nagpur', 'Event', 'https://images.unsplash.com/photo-1464226184884-fa280b87c399?auto=format&fit=crop&q=80&w=400');
+('Organic Farming Workshop in Nagpur', 'Event', 'https://images.unsplash.com/photo-1464226184884-fa280b87c399?auto=format&fit=crop&q=80&w=400')
+on conflict do nothing;
 
 insert into public.store_products (name, brand, price, unit, category, image_url) values 
 ('High Yield Seeds', 'Mahyco', 1200, '20kg', 'Seeds', 'https://images.unsplash.com/photo-1574943320219-553eb213f721?auto=format&fit=crop&q=80&w=400'),
-('Organic Fertilizer', 'IFFCO', 850, '50kg', 'Fertilizer', 'https://images.unsplash.com/photo-1628350210274-3c82b33b0394?auto=format&fit=crop&q=80&w=400');
+('Organic Fertilizer', 'IFFCO', 850, '50kg', 'Fertilizer', 'https://images.unsplash.com/photo-1628350210274-3c82b33b0394?auto=format&fit=crop&q=80&w=400')
+on conflict do nothing;
 
 insert into public.agri_services (title, type, price_per_day, location, image_url) values 
-('Heavy Duty Tractor', 'Rental', 1500, 'Nagpur', 'https://images.unsplash.com/photo-1530267981375-f0de937f5f13?auto=format&fit=crop&q=80&w=400');
+('Heavy Duty Tractor', 'Rental', 1500, 'Nagpur', 'https://images.unsplash.com/photo-1530267981375-f0de937f5f13?auto=format&fit=crop&q=80&w=400')
+on conflict do nothing;
+
+insert into public.academy_content (title, category, thumbnail_url, video_url) values 
+('Mastering Drip Irrigation', 'Technical', 'https://images.unsplash.com/photo-1592982537447-7440770cbfc9?auto=format&fit=crop&q=80&w=400', 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'),
+('Organic Fertilizer Preparation', 'Organic', 'https://images.unsplash.com/photo-1628350210274-3c82b33b0394?auto=format&fit=crop&q=80&w=400', 'https://www.youtube.com/watch?v=dQw4w9WgXcQ')
+on conflict do nothing;
