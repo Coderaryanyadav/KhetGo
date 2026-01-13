@@ -1,96 +1,162 @@
--- KhetGo Advanced Backend Schema
--- Copy and run this in your Supabase SQL Editor
+-- KhetGo REAL Backend Schema (No Mock Data Version)
 
--- 1. Enable Extensions
+-- 1. Enable UUID
 create extension if not exists "uuid-ossp";
 
--- 2. Create User Profiles
--- This table automatically links to Supabase Auth users
+-- 2. Profiles (Extended)
 create table if not exists public.profiles (
   id uuid references auth.users on delete cascade primary key,
   full_name text,
-  role text check (role in ('farmer', 'buyer')),
-  pincode text,
-  district text,
-  state text,
+  role text check (role in ('farmer', 'buyer', 'admin')),
   avatar_url text,
-  is_verified boolean default false,
   bio text,
+  district text,
+  pincode text,
+  is_verified boolean default false,
+  lat numeric,
+  lng numeric,
   created_at timestamp with time zone default timezone('utc'::text, now())
 );
 
--- 3. Create Crop Listings (Enhanced)
+-- 3. Mandi Prices (Live Feed)
+create table if not exists public.mandi_prices (
+  id uuid default uuid_generate_v4() primary key,
+  crop text not null,
+  price numeric not null,
+  unit text default 'Quintal',
+  trend text check (trend in ('up', 'down', 'stable')),
+  change_pct text,
+  market_name text,
+  updated_at timestamp with time zone default timezone('utc'::text, now())
+);
+
+-- 4. Listings (Crops)
 create table if not exists public.listings (
   id uuid default uuid_generate_v4() primary key,
   owner_id uuid references public.profiles(id) on delete cascade,
   name text not null,
-  description text,
   price numeric not null,
   unit text not null,
   quantity text,
-  category text check (category in ('Grains', 'Vegetables', 'Fruits', 'Organic', 'Spices')),
-  pincode text not null,
-  location_name text,
+  category text,
+  description text,
+  pincode text,
   image_url text,
-  gallery_urls text[], -- Array of additional image URLs
+  gallery_urls text[],
   harvest_date date,
-  is_active boolean default true,
+  is_verified boolean default false,
   created_at timestamp with time zone default timezone('utc'::text, now())
 );
 
--- 4. Create Service Bookings
+-- 5. Agri Services (Rentals)
+create table if not exists public.agri_services (
+  id uuid default uuid_generate_v4() primary key,
+  title text not null,
+  type text,
+  price_per_day numeric,
+  provider_id uuid references public.profiles(id),
+  image_url text,
+  location text,
+  created_at timestamp with time zone default timezone('utc'::text, now())
+);
+
+-- 6. Agri Store (Products)
+create table if not exists public.store_products (
+  id uuid default uuid_generate_v4() primary key,
+  name text not null,
+  brand text,
+  price numeric not null,
+  unit text,
+  category text,
+  image_url text,
+  description text,
+  stock_status text default 'In Stock',
+  created_at timestamp with time zone default timezone('utc'::text, now())
+);
+
+-- 7. Community Forum
+create table if not exists public.forum_posts (
+  id uuid default uuid_generate_v4() primary key,
+  author_id uuid references public.profiles(id) on delete cascade,
+  title text not null,
+  content text not null,
+  category text,
+  likes_count int default 0,
+  created_at timestamp with time zone default timezone('utc'::text, now())
+);
+
+-- 8. News Articles (Agri-Buzz)
+create table if not exists public.news_articles (
+  id uuid default uuid_generate_v4() primary key,
+  title text not null,
+  content text,
+  category text,
+  image_url text,
+  author_name text default 'KhetGo Editor',
+  created_at timestamp with time zone default timezone('utc'::text, now())
+);
+
+-- 9. Bookings & Orders
 create table if not exists public.bookings (
   id uuid default uuid_generate_v4() primary key,
-  user_id uuid references public.profiles(id),
+  user_id uuid references public.profiles(id) on delete cascade,
+  item_id uuid,
   item_name text not null,
-  item_type text,
+  item_type text check (item_type in ('Produce', 'Service', 'StoreProduct')),
   price_per_unit numeric,
-  start_date date,
-  end_date date,
-  status text default 'pending' check (status in ('pending', 'confirmed', 'completed', 'cancelled')),
+  status text default 'pending',
   booking_date timestamp with time zone default timezone('utc'::text, now())
 );
 
--- 5. Real-time Messaging (Chat)
+-- 10. Direct Messages
 create table if not exists public.messages (
   id uuid default uuid_generate_v4() primary key,
-  sender_id uuid references public.profiles(id),
-  receiver_id uuid references public.profiles(id),
+  sender_id uuid references public.profiles(id) on delete cascade,
+  receiver_id uuid references public.profiles(id) on delete cascade,
   content text not null,
-  is_read boolean default false,
   created_at timestamp with time zone default timezone('utc'::text, now())
 );
 
--- 6. Trigger for New User Profile
--- Automatically create a profile when a user signs up
-create or replace function public.handle_new_user()
-returns trigger as $$
-begin
-  insert into public.profiles (id, full_name, role)
-  values (new.id, new.raw_user_meta_data->>'full_name', new.raw_user_meta_data->>'role');
-  return new;
-end;
-$$ language plpgsql security modeller;
-
-create or replace trigger on_auth_user_created
-  after insert on auth.users
-  for each row execute procedure public.handle_new_user();
-
--- 7. RLS Fixes
+-- 11. Security (RLS)
 alter table public.profiles enable row level security;
+alter table public.mandi_prices enable row level security;
 alter table public.listings enable row level security;
+alter table public.agri_services enable row level security;
+alter table public.store_products enable row level security;
+alter table public.forum_posts enable row level security;
+alter table public.news_articles enable row level security;
 alter table public.bookings enable row level security;
 alter table public.messages enable row level security;
 
--- Profile Policies
-create policy "Public profiles are viewable by everyone" on public.profiles for select using (true);
-create policy "Users can update own profile" on public.profiles for update using (auth.uid() = id);
+-- Policies (Basic)
+create policy "Select Prof" on public.profiles for select using (true);
+create policy "Update Prof" on public.profiles for update using (auth.uid() = id);
+create policy "Select Mandi" on public.mandi_prices for select using (true);
+create policy "Select List" on public.listings for select using (true);
+create policy "Insert List" on public.listings for insert with check (auth.role() = 'authenticated');
+create policy "Delete List" on public.listings for delete using (auth.uid() = owner_id);
+create policy "Select Service" on public.agri_services for select using (true);
+create policy "Select Store" on public.store_products for select using (true);
+create policy "Select Forum" on public.forum_posts for select using (true);
+create policy "Select News" on public.news_articles for select using (true);
+create policy "Select Book" on public.bookings for select using (auth.uid() = user_id);
+create policy "Insert Book" on public.bookings for insert with check (auth.role() = 'authenticated');
+create policy "Select Msg" on public.messages for select using (auth.uid() = sender_id or auth.uid() = receiver_id);
+create policy "Insert Msg" on public.messages for insert with check (auth.uid() = sender_id);
 
--- Listing Policies
-create policy "Listings are viewable by everyone" on public.listings for select using (true);
-create policy "Farmers can insert listings" on public.listings for insert with check (auth.uid() = owner_id);
-create policy "Farmers can update/delete own listings" on public.listings for all using (auth.uid() = owner_id);
+-- SEED DATA
+insert into public.mandi_prices (crop, price, change_pct, trend) values 
+('Wheat', 2450, '+2.1%', 'up'),
+('Mustard', 5600, '-1.4%', 'down'),
+('Potato', 1200, '+0.5%', 'up');
 
--- Message Policies
-create policy "Users can see their own messages" on public.messages for select using (auth.uid() = sender_id or auth.uid() = receiver_id);
-create policy "Users can send messages" on public.messages for insert with check (auth.uid() = sender_id);
+insert into public.news_articles (title, category, image_url) values 
+('New Fertilizer Subsidy Announced', 'Policy', 'https://images.unsplash.com/photo-1628350210274-3c82b33b0394?auto=format&fit=crop&q=80&w=400'),
+('Organic Farming Workshop in Nagpur', 'Event', 'https://images.unsplash.com/photo-1464226184884-fa280b87c399?auto=format&fit=crop&q=80&w=400');
+
+insert into public.store_products (name, brand, price, unit, category, image_url) values 
+('High Yield Seeds', 'Mahyco', 1200, '20kg', 'Seeds', 'https://images.unsplash.com/photo-1574943320219-553eb213f721?auto=format&fit=crop&q=80&w=400'),
+('Organic Fertilizer', 'IFFCO', 850, '50kg', 'Fertilizer', 'https://images.unsplash.com/photo-1628350210274-3c82b33b0394?auto=format&fit=crop&q=80&w=400');
+
+insert into public.agri_services (title, type, price_per_day, location, image_url) values 
+('Heavy Duty Tractor', 'Rental', 1500, 'Nagpur', 'https://images.unsplash.com/photo-1530267981375-f0de937f5f13?auto=format&fit=crop&q=80&w=400');

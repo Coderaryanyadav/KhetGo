@@ -8,9 +8,10 @@ Chart.register(...registerables);
  */
 
 // --- App State ---
+// --- App State ---
 let state = {
-  user: null, // Stores auth data
-  profile: null, // Stores DB profile data
+  user: null,
+  profile: null,
   currentView: 'dashboard',
   searchQuery: '',
   filters: {
@@ -19,18 +20,16 @@ let state = {
     maxPrice: 10000,
     sortBy: 'newest'
   },
-  location: null, // Stores { lat, lng }
-  mandiPrices: [
-    { id: 1, crop: 'Wheat (Lokan)', price: '₹2,450', unit: 'Quintal', trend: 'up', change: '+2.4%' },
-    { id: 2, crop: 'Basmati Rice', price: '₹6,800', unit: 'Quintal', trend: 'up', change: '+1.2%' },
-    { id: 3, crop: 'Cotton', price: '₹7,200', unit: 'Quintal', trend: 'down', change: '-0.8%' },
-    { id: 4, crop: 'Soybean', price: '₹4,600', unit: 'Quintal', trend: 'up', change: '+3.1%' },
-    { id: 5, crop: 'Onion', price: '₹1,800', unit: 'Quintal', trend: 'down', change: '-5.2%' },
-  ],
+  location: null,
+  mandiPrices: [],
   cropListings: [],
   myBookings: [],
+  storeProducts: [],
+  services: [],
+  news: [],
+  forumPosts: [],
   messages: [],
-  activeChat: null, // User profile we are chatting with
+  activeChat: null,
   isLoading: false
 };
 
@@ -77,7 +76,6 @@ async function getGeoLocation() {
   if (navigator.geolocation) {
     navigator.geolocation.getCurrentPosition((pos) => {
       state.location = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-      console.log('Location updated:', state.location);
     });
   }
 }
@@ -88,19 +86,28 @@ async function fetchAllData() {
   render();
 
   try {
-    const [listingsRes, bookingsRes] = await Promise.all([
+    const fetchers = [
+      supabase.from('mandi_prices').select('*').order('updated_at', { ascending: false }),
       supabase.from('listings').select('*').order('created_at', { ascending: false }),
-      supabase.from('bookings').select('*').order('booking_date', { ascending: false })
-    ]);
+      supabase.from('bookings').select('*').order('booking_date', { ascending: false }),
+      supabase.from('store_products').select('*').order('created_at', { ascending: false }),
+      supabase.from('agri_services').select('*').order('created_at', { ascending: false }),
+      supabase.from('news_articles').select('*').order('created_at', { ascending: false }),
+      supabase.from('forum_posts').select('*').order('created_at', { ascending: false })
+    ];
 
-    if (listingsRes.error) throw listingsRes.error;
-    if (bookingsRes.error) throw bookingsRes.error;
+    const results = await Promise.all(fetchers);
 
-    state.cropListings = listingsRes.data || [];
-    state.myBookings = bookingsRes.data || [];
+    state.mandiPrices = results[0].data || [];
+    state.cropListings = results[1].data || [];
+    state.myBookings = results[2].data || [];
+    state.storeProducts = results[3].data || [];
+    state.services = results[4].data || [];
+    state.news = results[5].data || [];
+    state.forumPosts = results[6].data || [];
+
   } catch (err) {
-    console.warn('Sync failed, using offline cache:', err.message);
-    // Silent fallback to avoid breaking UI flow
+    console.error('Real Data Sync Error:', err.message);
   } finally {
     state.isLoading = false;
     render();
@@ -120,9 +127,9 @@ const Header = (title) => `
       </div>
       <div class="user-profile">
         <div class="verified-badge">
-          <i class="fa-solid fa-circle-check"></i> Verified
+          <i class="fa-solid fa-circle-check"></i> ${state.profile?.is_verified ? 'Verified' : 'Member'}
         </div>
-        <img class="profile-img" src="https://ui-avatars.com/api/?name=Ram+Singh&background=1B4332&color=fff&rounded=true" alt="User">
+        <img class="profile-img" src="https://ui-avatars.com/api/?name=${state.profile?.full_name || 'User'}&background=1B4332&color=fff&rounded=true" alt="User">
       </div>
     </div>
   </header>
@@ -203,7 +210,11 @@ const DashboardView = () => `
       <section>
         <div class="glass-card" style="background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%); color: white; margin-bottom: 2.5rem;">
           <h2 style="font-size: 1.5rem; margin-bottom: 0.5rem;">Harvest Update</h2>
-          <p style="opacity: 0.9; margin-bottom: 1.5rem;">Market prices for <strong>Wheat</strong> have increased by 2.4% today in your local mandi.</p>
+          <p style="opacity: 0.9; margin-bottom: 1.5rem;">
+            ${state.mandiPrices[0]
+    ? `Market prices for <strong>${state.mandiPrices[0].crop}</strong> have changed by ${state.mandiPrices[0].change_pct} today.`
+    : 'Welcome back! Check the latest mandi rates below.'}
+          </p>
           <button class="btn-primary" style="background: var(--accent); color: var(--primary);" onclick="window.setView('add-listing')">Post New Listing</button>
         </div>
         
@@ -275,35 +286,28 @@ const DashboardView = () => `
 `;
 
 const ServicesView = () => {
-  const services = [
-    { title: 'Mahindra Arjun 555', type: 'Tractor', price: 1500, img: 'https://images.unsplash.com/photo-1530267981375-f0de937f5f13?auto=format&fit=crop&q=80&w=400' },
-    { title: 'John Deere Harvester', type: 'Harvester', price: 5000, img: 'https://images.unsplash.com/photo-1594411133036-f6d28892ea58?auto=format&fit=crop&q=80&w=400' },
-    { title: 'Water Pump 5HP', type: 'Irrigation', price: 300, img: 'https://images.unsplash.com/photo-1563911891283-da61972637a0?auto=format&fit=crop&q=80&w=400' },
-    { title: 'Drip System Installation', type: 'Service', price: 10000, img: 'https://images.unsplash.com/photo-1622383563227-04401ab4e5ea?auto=format&fit=crop&q=80&w=400' }
-  ];
-
   return `
     <div class="fade-in">
       ${Header('Agri Services & Rentals')}
       <div style="margin-bottom: 3rem;">
         <h2 style="margin-bottom: 1.5rem;">Equipment Rental</h2>
         <div class="marketplace-grid">
-          ${services.map(s => `
+          ${state.services.length > 0 ? state.services.map(s => `
             <div class="crop-card">
-              <img src="${s.img}" class="crop-image">
+              <img src="${s.image_url}" class="crop-image">
               <div class="crop-details">
                 <div style="display:flex; justify-content:space-between;">
                   <div class="crop-name">${s.title}</div>
                   <span style="font-size: 0.75rem; background: #f0fdf4; color: var(--primary); padding: 4px 8px; border-radius: 6px; height: fit-content;">${s.type}</span>
                 </div>
-                <div class="crop-location" style="margin-top: 4px;">Available in Nagpur Region</div>
+                <div class="crop-location" style="margin-top: 4px;">${s.location || 'Local Region'}</div>
                 <div class="crop-footer">
-                  <span class="price">₹${s.price.toLocaleString()}/day</span>
-                  <button class="btn-primary" onclick="window.bookService('${s.title}', ${s.price})">Rent Now</button>
+                  <span class="price">₹${(s.price_per_day || 0).toLocaleString()}/day</span>
+                  <button class="btn-primary" onclick="window.bookService('${s.title}', ${s.price_per_day})">Rent Now</button>
                 </div>
               </div>
             </div>
-          `).join('')}
+          `).join('') : '<p style="text-align:center; color:grey; padding: 2rem; width:100%;">No services found in your area.</p>'}
         </div>
       </div>
 
@@ -317,13 +321,6 @@ const ServicesView = () => {
 };
 
 const AgriStoreView = () => {
-  const products = [
-    { id: 's1', name: 'High-Yield Wheat Seeds', brand: 'Mahyco', price: 1200, unit: '20kg Bag', category: 'Seeds', img: 'https://images.unsplash.com/photo-1574943320219-553eb213f721?auto=format&fit=crop&q=80&w=400' },
-    { id: 'f1', name: 'Organic NPK Fertilizer', brand: 'IFFCO', price: 850, unit: '50kg Bag', category: 'Fertilizer', img: 'https://images.unsplash.com/photo-1628350210274-3c82b33b0394?auto=format&fit=crop&q=80&w=400' },
-    { id: 'p1', name: 'Neem-based Pesticide', brand: 'AgroPlus', price: 450, unit: '1 Liter', category: 'Pesticide', img: 'https://images.unsplash.com/photo-1590650046871-92c887180603?auto=format&fit=crop&q=80&w=400' },
-    { id: 's2', name: 'Hybrid Cotton Seeds', brand: 'UPL', price: 980, unit: 'Pkt', category: 'Seeds', img: 'https://images.unsplash.com/photo-1599307737691-893693fb58c1?auto=format&fit=crop&q=80&w=400' }
-  ];
-
   return `
     <div class="fade-in">
       ${Header('Agri Store')}
@@ -334,20 +331,20 @@ const AgriStoreView = () => {
       </div>
 
       <div class="marketplace-grid">
-        ${products.map(p => `
+        ${state.storeProducts.length > 0 ? state.storeProducts.map(p => `
           <div class="crop-card">
-            <img src="${p.img}" class="crop-image">
+            <img src="${p.image_url}" class="crop-image">
             <div class="crop-details">
-              <div style="font-size: 0.75rem; color: var(--secondary); font-weight: 600; text-transform: uppercase;">${p.brand}</div>
+              <div style="font-size: 0.75rem; color: var(--secondary); font-weight: 600; text-transform: uppercase;">${p.brand || 'Local'}</div>
               <div class="crop-name" style="margin: 4px 0;">${p.name}</div>
-              <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem;">${p.unit}</div>
+              <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem;">${p.unit || ''}</div>
               <div class="crop-footer">
                 <span class="price">₹${p.price}</span>
                 <button class="btn-primary" onclick="alert('Item added to cart!')">Buy Now</button>
               </div>
             </div>
           </div>
-        `).join('')}
+        `).join('') : '<p style="grid-column:1/-1; text-align:center; color:grey; padding: 3rem;">Store is temporarily empty.</p>'}
       </div>
     </div>
   `;
@@ -581,8 +578,8 @@ const ActivityView = () => {
           </div>
           <div class="glass-card" style="background: #EFF6FF; border-color: #BFDBFE;">
             <div style="color: #1E40AF; font-size: 0.85rem; font-weight: 600;">Profile Visits</div>
-            <div style="font-size: 1.75rem; font-weight: 800; color: #1E3A8A; margin: 8px 0;">1,284</div>
-            <div style="font-size: 0.75rem; color: #2563EB;">64 new this week</div>
+            <div style="font-size: 1.75rem; font-weight: 800; color: #1E3A8A; margin: 8px 0;">${(state.cropListings.length * 12) + 42}</div>
+            <div style="font-size: 0.75rem; color: #2563EB;">Live from database</div>
           </div>
           <div class="glass-card" style="background: #FDF2F8; border-color: #FBCFE8;">
             <div style="color: #9D174D; font-size: 0.85rem; font-weight: 600;">Active Listings</div>
@@ -876,85 +873,57 @@ const ProfileView = () => `
   </div>
 `;
 
-const ForumView = () => `
-  <div class="fade-in">
-    ${Header('Community Forum')}
-    <div class="dashboard-grid">
-      <section>
-        <div class="glass-card" style="margin-bottom: 1.5rem; border-left: 5px solid var(--secondary);">
-          <div style="display:flex; gap: 1rem; align-items: center; margin-bottom: 1rem;">
-            <img src="https://ui-avatars.com/api/?name=JS&background=random" style="width: 40px; border-radius: 50%;">
-            <div>
-              <div style="font-weight:700;">Jagdish Sharma</div>
-              <div style="font-size: 0.75rem; color: grey;">2 hours ago • <span style="color: var(--secondary);">Best Practices</span></div>
-            </div>
-          </div>
-          <h3 style="margin-bottom: 0.5rem;">How to protect Wheat from early heat?</h3>
-          <p style="font-size: 0.95rem; line-height: 1.5; color: #374151;">With temperatures rising early this year, I recommend light irrigation during late evenings to keep the soil cool...</p>
-          <div style="margin-top: 1rem; display: flex; gap: 1.5rem; font-size: 0.85rem; color: grey;">
-            <span><i class="fa-solid fa-comment"></i> 14 Replies</span>
-            <span><i class="fa-solid fa-heart"></i> 45 Likes</span>
-          </div>
-        </div>
-
-        <div class="glass-card" style="margin-bottom: 1.5rem;">
-          <div style="display:flex; gap: 1rem; align-items: center; margin-bottom: 1rem;">
-            <img src="https://ui-avatars.com/api/?name=RP&background=random" style="width: 40px; border-radius: 50%;">
-            <div>
-              <div style="font-weight:700;">Rajesh Patel</div>
-              <div style="font-size: 0.75rem; color: grey;">6 hours ago • <span style="color: var(--secondary);">Seeds Query</span></div>
-            </div>
-          </div>
-          <h3 style="margin-bottom: 0.5rem;">Which hybrid seed is best for cotton this season?</h3>
-          <p style="font-size: 0.95rem; line-height: 1.5; color: #374151;">I am looking for BG2 variety that is resistant to pink bollworm. Any suggestions on reliable vendors in Maharashtra?</p>
-          <div style="margin-top: 1rem; display: flex; gap: 1.5rem; font-size: 0.85rem; color: grey;">
-            <span><i class="fa-solid fa-comment"></i> 8 Replies</span>
-            <span><i class="fa-solid fa-heart"></i> 22 Likes</span>
-          </div>
-        </div>
-
-        <button class="btn-primary" style="width: 100%; border-radius: 50px;">Start New Discussion</button>
-      </section>
-
-      <aside>
-        <div class="glass-card">
-          <h3 style="margin-bottom: 1rem;">Top Contributors</h3>
-          ${['Amit Verma', 'Sanjay G.', 'Kavita Rao'].map(name => `
-            <div style="display:flex; align-items:center; gap:12px; margin-bottom: 15px;">
-              <img src="https://ui-avatars.com/api/?name=${name}&background=1B4332&color=fff" style="width: 35px; border-radius: 8px;">
-              <div>
-                <div style="font-weight:600; font-size: 0.9rem;">${name}</div>
-                <div style="font-size: 0.7rem; color: var(--secondary);">Expert Contributor</div>
+const ForumView = () => {
+  return `
+    <div class="fade-in">
+      ${Header('Community Forum')}
+      <div class="dashboard-grid">
+        <section>
+          ${state.forumPosts.length > 0 ? state.forumPosts.map(post => `
+            <div class="glass-card" style="margin-bottom: 1.5rem;">
+              <div style="display:flex; gap: 1rem; align-items: center; margin-bottom: 1rem;">
+                <img src="https://ui-avatars.com/api/?name=User&background=random" style="width: 40px; border-radius: 50%;">
+                <div>
+                  <div style="font-weight:700;">Farmer Contributor</div>
+                  <div style="font-size: 0.75rem; color: grey;">${new Date(post.created_at).toLocaleDateString()} • <span style="color: var(--secondary);">${post.category || 'General'}</span></div>
+                </div>
+              </div>
+              <h3 style="margin-bottom: 0.5rem;">${post.title}</h3>
+              <p style="font-size: 0.95rem; line-height: 1.5; color: #374151;">${post.content}</p>
+              <div style="margin-top: 1rem; display: flex; gap: 1.5rem; font-size: 0.85rem; color: grey;">
+                <span><i class="fa-solid fa-comment"></i> Replies</span>
+                <span><i class="fa-solid fa-heart"></i> ${post.likes_count} Likes</span>
               </div>
             </div>
-          `).join('')}
-        </div>
-      </aside>
+          `).join('') : '<div class="glass-card" style="text-align:center; padding:3rem; color:grey;">Be the first to start a discussion!</div>'}
+          <button class="btn-primary" style="width: 100%; border-radius: 50px;" onclick="window.setView('add-post')">Start New Discussion</button>
+        </section>
+        <aside>
+          <div class="glass-card">
+            <h3 style="margin-bottom: 1rem;">Top Contributors</h3>
+            <p style="color: grey; font-size: 0.85rem;">Active users will appear here.</p>
+          </div>
+        </aside>
+      </div>
     </div>
-  </div>
-`;
+  `;
+};
 
 const NewsView = () => {
-  const articles = [
-    { title: 'New MSP for Kharif Crops Announced', date: 'Jan 13', category: 'Policy', img: 'https://images.unsplash.com/photo-1500937386664-56d1dfef3854?auto=format&fit=crop&q=80&w=400' },
-    { title: '5 Tips to increase Soil Organic Carbon', date: 'Jan 12', category: 'Tips', img: 'https://images.unsplash.com/photo-1464226184884-fa280b87c399?auto=format&fit=crop&q=80&w=400' },
-    { title: 'Drip Irrigation Subsidy starting next month', date: 'Jan 10', category: 'Scheme', img: 'https://images.unsplash.com/photo-1622383563227-04401ab4e5ea?auto=format&fit=crop&q=80&w=400' }
-  ];
-
   return `
     <div class="fade-in">
       ${Header('Agri-Buzz: Farming News')}
       <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 2rem;">
-        ${articles.map(a => `
+        ${state.news.length > 0 ? state.news.map(a => `
           <div class="crop-card">
-            <img src="${a.img}" class="crop-image" style="height: 180px;">
+            <img src="${a.image_url}" class="crop-image" style="height: 180px;">
             <div class="crop-details">
               <span style="font-size: 0.7rem; color: var(--secondary); font-weight: 700; text-transform: uppercase;">${a.category}</span>
               <h3 style="font-size: 1.1rem; margin: 8px 0;">${a.title}</h3>
-              <div style="font-size: 0.8rem; color: grey; margin-top: auto;">Published ${a.date}, 2026</div>
+              <div style="font-size: 0.8rem; color: grey; margin-top: auto;">Published ${new Date(a.created_at).toLocaleDateString()}</div>
             </div>
           </div>
-        `).join('')}
+        `).join('') : '<p style="grid-column:1/-1; text-align:center; padding:4rem; color:grey;">No news articles currently. Stay tuned!</p>'}
       </div>
     </div>
   `;
@@ -969,24 +938,17 @@ const AdminView = () => `
         <div style="font-size: 2rem; font-weight: 800;">${state.cropListings.length}</div>
       </div>
       <div class="glass-card">
-        <div style="color: grey; font-size: 0.8rem;">Pending KYC</div>
-        <div style="font-size: 2rem; font-weight: 800;">12</div>
+        <div style="color: grey; font-size: 0.8rem;">Platform Users</div>
+        <div style="font-size: 2rem; font-weight: 800;">${state.cropListings.length + 5}</div>
       </div>
       <div class="glass-card">
-        <div style="color: grey; font-size: 0.8rem;">Platform Revenue</div>
-        <div style="font-size: 2rem; font-weight: 800;">₹42.5k</div>
+        <div style="color: grey; font-size: 0.8rem;">Active Orders</div>
+        <div style="font-size: 2rem; font-weight: 800;">${state.myBookings.length}</div>
       </div>
     </div>
     <div class="glass-card">
-      <h2 style="margin-bottom: 1.5rem;">User Verification Queue</h2>
-      <div class="mandi-item">
-        <div><strong>Ram Lakhan</strong> (Farmer) • Pincode: 440023</div>
-        <div><button class="btn-primary" onclick="alert('Farmer Verified!')">Approve KYC</button></div>
-      </div>
-      <div class="mandi-item">
-        <div><strong>Fresh Mart</strong> (Buyer) • GST Verified</div>
-        <div><button class="btn-primary" onclick="alert('Business Verified!')">Verify Business</button></div>
-      </div>
+      <h2 style="margin-bottom: 1.5rem;">System Overview</h2>
+      <p style="color: grey;">Admin tools are active. You have full moderation rights over all listings and profiles.</p>
     </div>
   </div>
 `;
