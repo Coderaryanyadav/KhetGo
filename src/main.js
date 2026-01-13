@@ -136,11 +136,19 @@ const Sidebar = () => `
       </div>
       <div class="nav-link ${state.currentView === 'services' ? 'active' : ''}" data-view="services">
         <i class="fa-solid fa-truck-pickup"></i>
-        <span>Services</span>
+        <span>Rentals</span>
+      </div>
+      <div class="nav-link ${state.currentView === 'agri-store' ? 'active' : ''}" data-view="agri-store">
+        <i class="fa-solid fa-bag-shopping"></i>
+        <span>Agri Store</span>
       </div>
       <div class="nav-link ${state.currentView === 'mandi-markets' ? 'active' : ''}" data-view="mandi-markets">
         <i class="fa-solid fa-chart-line"></i>
         <span>Mandi Prices</span>
+      </div>
+      <div class="nav-link ${state.currentView === 'news' ? 'active' : ''}" data-view="news">
+        <i class="fa-solid fa-newspaper"></i>
+        <span>Agri-Buzz</span>
       </div>
       <div class="nav-link ${state.currentView === 'inbox' ? 'active' : ''}" data-view="inbox">
         <i class="fa-solid fa-message"></i>
@@ -289,11 +297,88 @@ const ServicesView = () => {
       <div class="glass-card" style="background: linear-gradient(135deg, #2D6A4F 0%, #1B4332 100%); color: white;">
         <h2 style="margin-bottom: 1rem;">Soil Testing Service</h2>
         <p style="opacity: 0.9; margin-bottom: 1.5rem;">Get your soil tested by experts. Optimize your fertilizer usage and increase yield by up to 30%.</p>
-        <button class="btn-primary" style="background: var(--accent); color: var(--primary);" onclick="alert('Lab assistant will be assigned shortly!')">Book Laboratory Test</button>
+        <button class="btn-primary" style="background: var(--accent); color: var(--primary);" onclick="window.setView('soil-testing')">Book Laboratory Test</button>
       </div>
     </div>
   `;
 };
+
+const AgriStoreView = () => {
+  const products = [
+    { id: 's1', name: 'High-Yield Wheat Seeds', brand: 'Mahyco', price: 1200, unit: '20kg Bag', category: 'Seeds', img: 'https://images.unsplash.com/photo-1574943320219-553eb213f721?auto=format&fit=crop&q=80&w=400' },
+    { id: 'f1', name: 'Organic NPK Fertilizer', brand: 'IFFCO', price: 850, unit: '50kg Bag', category: 'Fertilizer', img: 'https://images.unsplash.com/photo-1628350210274-3c82b33b0394?auto=format&fit=crop&q=80&w=400' },
+    { id: 'p1', name: 'Neem-based Pesticide', brand: 'AgroPlus', price: 450, unit: '1 Liter', category: 'Pesticide', img: 'https://images.unsplash.com/photo-1590650046871-92c887180603?auto=format&fit=crop&q=80&w=400' },
+    { id: 's2', name: 'Hybrid Cotton Seeds', brand: 'UPL', price: 980, unit: 'Pkt', category: 'Seeds', img: 'https://images.unsplash.com/photo-1599307737691-893693fb58c1?auto=format&fit=crop&q=80&w=400' }
+  ];
+
+  return `
+    <div class="fade-in">
+      ${Header('Agri Store')}
+      <div style="display: flex; gap: 1rem; margin-bottom: 2rem; overflow-x: auto;">
+        ${['All', 'Seeds', 'Fertilizer', 'Pesticides', 'Tools'].map(cat => `
+          <button class="btn-primary" style="background: ${cat === 'All' ? 'var(--primary)' : 'white'}; color: ${cat === 'All' ? 'white' : 'var(--text-main)'}; border: 1px solid #eee; white-space: nowrap;">${cat}</button>
+        `).join('')}
+      </div>
+
+      <div class="marketplace-grid">
+        ${products.map(p => `
+          <div class="crop-card">
+            <img src="${p.img}" class="crop-image">
+            <div class="crop-details">
+              <div style="font-size: 0.75rem; color: var(--secondary); font-weight: 600; text-transform: uppercase;">${p.brand}</div>
+              <div class="crop-name" style="margin: 4px 0;">${p.name}</div>
+              <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem;">${p.unit}</div>
+              <div class="crop-footer">
+                <span class="price">₹${p.price}</span>
+                <button class="btn-primary" onclick="alert('Item added to cart!')">Buy Now</button>
+              </div>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `;
+};
+
+const SoilTestingView = () => `
+  <div class="fade-in">
+    ${Header('Soil Testing Lab')}
+    <div class="dashboard-grid">
+      <section>
+        <div class="glass-card" style="margin-bottom: 2rem;">
+          <h2 style="margin-bottom: 1rem;">Why Test Your Soil?</h2>
+          <p style="line-height: 1.6; color: #4B5563;">Soil testing is an essential first step for any successful farming season. Our digital reports help you determine exactly what nutrients your soil lacks, saving you thousands in unnecessary fertilizer costs.</p>
+        </div>
+
+        <div class=" glass-card">
+          <h3 style="margin-bottom: 1.5rem;">Book a Lab Test</h3>
+          <form style="display: flex; flex-direction: column; gap: 1.2rem;">
+            <div>
+              <label style="display:block; font-weight:600; margin-bottom:6px;">Test Package</label>
+              <select style="width:100%; padding:14px; border-radius:12px; border:1px solid #E5E7EB; background: white;">
+                <option>Basic NPK Analysis - ₹299</option>
+                <option>Advanced Micronutrient Test - ₹599</option>
+                <option>Complete Soil Health Card - ₹999</option>
+              </select>
+            </div>
+            <div>
+              <label style="display:block; font-weight:600; margin-bottom:6px;">Sample Collection Date</label>
+              <input type="date" style="width:100%; padding:14px; border-radius:12px; border:1px solid #E5E7EB;">
+            </div>
+            <button class="btn-primary" type="button" onclick="alert('Sample collection agent will be assigned to your pincode.')">Schedule Collection</button>
+          </form>
+        </div>
+      </section>
+
+      <aside>
+        <div class="glass-card" style="background: #F0FDF4; border: 1px dashed var(--secondary);">
+          <h3 style="font-size: 1.1rem; color: var(--primary); margin-bottom: 1rem;">Previous Reports</h3>
+          <p style="font-size: 0.85rem; color: grey;">You haven't uploaded any soil health cards yet. Get your first test today!</p>
+        </div>
+      </aside>
+    </div>
+  </div>
+`;
 
 const MandiMarketsView = () => `
   <div class="fade-in">
@@ -631,6 +716,15 @@ const ProductDetailView = (id) => {
                   <i class="fa-brands fa-whatsapp"></i> Contact on WhatsApp
                 </button>
               </div>
+              <h3 style="margin-bottom: 1rem;">Pickup Point</h3>
+              <div class="glass-card" style="background: #F9FAFB; padding: 1rem; margin-bottom: 2.5rem; display: flex; align-items: center; gap: 1rem;">
+                <i class="fa-solid fa-truck-ramp-box" style="font-size: 1.5rem; color: var(--secondary);"></i>
+                <div>
+                  <div style="font-weight: 700;">Local Mandi Collection Point</div>
+                  <div style="font-size: 0.85rem; color: grey;">Sector 4, Main Mandi, Nagpur</div>
+                </div>
+              </div>
+
               <h3 style="margin-bottom: 1.5rem;">Farmer Reviews</h3>
               <div style="display: flex; flex-direction: column; gap: 1rem;">
                 <div style="border-bottom: 1px solid #eee; padding-bottom: 1rem;">
@@ -767,6 +861,63 @@ const ForumView = () => `
           `).join('')}
         </div>
       </aside>
+    </div>
+  </div>
+`;
+
+const NewsView = () => {
+  const articles = [
+    { title: 'New MSP for Kharif Crops Announced', date: 'Jan 13', category: 'Policy', img: 'https://images.unsplash.com/photo-1500937386664-56d1dfef3854?auto=format&fit=crop&q=80&w=400' },
+    { title: '5 Tips to increase Soil Organic Carbon', date: 'Jan 12', category: 'Tips', img: 'https://images.unsplash.com/photo-1464226184884-fa280b87c399?auto=format&fit=crop&q=80&w=400' },
+    { title: 'Drip Irrigation Subsidy starting next month', date: 'Jan 10', category: 'Scheme', img: 'https://images.unsplash.com/photo-1622383563227-04401ab4e5ea?auto=format&fit=crop&q=80&w=400' }
+  ];
+
+  return `
+    <div class="fade-in">
+      ${Header('Agri-Buzz: Farming News')}
+      <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 2rem;">
+        ${articles.map(a => `
+          <div class="crop-card">
+            <img src="${a.img}" class="crop-image" style="height: 180px;">
+            <div class="crop-details">
+              <span style="font-size: 0.7rem; color: var(--secondary); font-weight: 700; text-transform: uppercase;">${a.category}</span>
+              <h3 style="font-size: 1.1rem; margin: 8px 0;">${a.title}</h3>
+              <div style="font-size: 0.8rem; color: grey; margin-top: auto;">Published ${a.date}, 2026</div>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `;
+};
+
+const AdminView = () => `
+  <div class="fade-in">
+    ${Header('Platform Moderation')}
+    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem; margin-bottom: 2.5rem;">
+      <div class="glass-card">
+        <div style="color: grey; font-size: 0.8rem;">Total Active Listings</div>
+        <div style="font-size: 2rem; font-weight: 800;">${state.cropListings.length}</div>
+      </div>
+      <div class="glass-card">
+        <div style="color: grey; font-size: 0.8rem;">Pending KYC</div>
+        <div style="font-size: 2rem; font-weight: 800;">12</div>
+      </div>
+      <div class="glass-card">
+        <div style="color: grey; font-size: 0.8rem;">Platform Revenue</div>
+        <div style="font-size: 2rem; font-weight: 800;">₹42.5k</div>
+      </div>
+    </div>
+    <div class="glass-card">
+      <h2 style="margin-bottom: 1.5rem;">User Verification Queue</h2>
+      <div class="mandi-item">
+        <div><strong>Ram Lakhan</strong> (Farmer) • Pincode: 440023</div>
+        <div><button class="btn-primary" onclick="alert('Farmer Verified!')">Approve KYC</button></div>
+      </div>
+      <div class="mandi-item">
+        <div><strong>Fresh Mart</strong> (Buyer) • GST Verified</div>
+        <div><button class="btn-primary" onclick="alert('Business Verified!')">Verify Business</button></div>
+      </div>
     </div>
   </div>
 `;
@@ -920,22 +1071,10 @@ function render() {
     case 'chat': content = ChatView(); break;
     case 'inbox': content = InboxView(); break;
     case 'forum': content = ForumView(); break;
-    case 'admin': content = `
-      <div class="fade-in">
-        ${Header('Platform Moderation')}
-        <div class="glass-card">
-          <h2 style="margin-bottom: 1.5rem;">User Moderation Queue</h2>
-          <div class="mandi-item">
-            <div><strong>Ram Lakhan</strong> (Farmer)</div>
-            <div><button class="btn-primary">Approve KYC</button></div>
-          </div>
-          <div class="mandi-item">
-            <div><strong>Fresh Mart</strong> (Buyer)</div>
-            <div><button class="btn-primary">Verify Business</button></div>
-          </div>
-        </div>
-      </div>
-    `; break;
+    case 'news': content = NewsView(); break;
+    case 'agri-store': content = AgriStoreView(); break;
+    case 'soil-testing': content = SoilTestingView(); break;
+    case 'admin': content = AdminView(); break;
     case 'mandi-markets': content = MandiMarketsView(); break;
     case 'services': content = ServicesView(); break;
     default: content = DashboardView();
