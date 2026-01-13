@@ -45,6 +45,8 @@ create table if not exists public.listings (
   gallery_urls text[],
   harvest_date date,
   is_verified boolean default false,
+  lat numeric,
+  lng numeric,
   created_at timestamp with time zone default timezone('utc'::text, now())
 );
 
