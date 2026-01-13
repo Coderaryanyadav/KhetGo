@@ -1256,6 +1256,12 @@ window.setView = (view) => {
   render();
 };
 
+window.showListing = (id) => {
+  state.viewData = id;
+  state.currentView = 'listing-detail';
+  render();
+};
+
 window.deleteItem = async (id) => {
   if (!confirm('Permanent delete this listing?')) return;
   const { error } = await supabase.from('listings').delete().eq('id', id);
