@@ -1,13 +1,15 @@
-import { supabase } from './supabase'
-import './style.css'
-import { Chart, registerables } from 'chart.js'
+import { supabase } from './supabase';
+import './style.css';
+import { Chart, registerables } from 'chart.js';
+import { jsPDF } from 'jspdf';
+import 'jspdf-autotable';
+
 Chart.register(...registerables);
 
 /**
- * KhetGo - Re-engineered for Stability & Premium UI
+ * KhetGo - High-Performance Agricultural Ecosystem
  */
 
-// --- App State ---
 // --- App State ---
 let state = {
   user: null,
@@ -52,6 +54,8 @@ async function checkAuth() {
     const { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single();
     state.profile = profile;
     subscribeToMessages();
+    requestNotificationPermission();
+    getGeoLocation();
   }
   render();
 }
@@ -87,7 +91,35 @@ async function getGeoLocation() {
   if (navigator.geolocation) {
     navigator.geolocation.getCurrentPosition((pos) => {
       state.location = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+      render();
     });
+  }
+}
+
+// Haversine Distance Helper
+function calculateDistance(lat1, lon1, lat2, lon2) {
+  if (!lat1 || !lon1 || !lat2 || !lon2) return null;
+  const R = 6371; // km
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return (R * c).toFixed(1);
+}
+
+// Notification Helper
+function showNotification(title, body) {
+  if ("Notification" in window && Notification.permission === "granted") {
+    new Notification(title, { body, icon: 'https://ui-avatars.com/api/?name=K&background=1B4332&color=fff' });
+  }
+}
+
+// Request Notification Permission
+async function requestNotificationPermission() {
+  if ("Notification" in window && Notification.permission === "default") {
+    await Notification.requestPermission();
   }
 }
 
@@ -452,6 +484,13 @@ const MarketplaceView = () => {
   if (state.filters.sortBy === 'price-low') filtered.sort((a, b) => a.price - b.price);
   if (state.filters.sortBy === 'price-high') filtered.sort((a, b) => b.price - a.price);
   if (state.filters.sortBy === 'newest') filtered.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  if (state.filters.sortBy === 'nearest' && state.location) {
+    filtered.sort((a, b) => {
+      const distA = calculateDistance(state.location.lat, state.location.lng, a.lat, a.lng) || 99999;
+      const distB = calculateDistance(state.location.lat, state.location.lng, b.lat, b.lng) || 99999;
+      return distA - distB;
+    });
+  }
 
   return `
     <div class="fade-in">
@@ -466,6 +505,7 @@ const MarketplaceView = () => {
               <option value="newest" ${state.filters.sortBy === 'newest' ? 'selected' : ''}>Newest First</option>
               <option value="price-low" ${state.filters.sortBy === 'price-low' ? 'selected' : ''}>Price: Low to High</option>
               <option value="price-high" ${state.filters.sortBy === 'price-high' ? 'selected' : ''}>Price: High to Low</option>
+              <option value="nearest" ${state.filters.sortBy === 'nearest' ? 'selected' : ''}>Nearest (GPS)</option>
             </select>
           </div>
 
@@ -488,22 +528,28 @@ const MarketplaceView = () => {
         </aside>
         
         <section class="marketplace-grid">
-          ${filtered.map(crop => `
-            <div class="crop-card">
-              <img src="${crop.image_url || 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&q=80&w=400'}" class="crop-image">
-              <div class="crop-details">
-                <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-                  <div class="crop-name">${crop.name}</div>
-                  ${crop.is_verified ? '<i class="fa-solid fa-certificate" style="color:#2D6A4F;" title="Verified"></i>' : ''}
-                </div>
-                <div class="crop-location"><i class="fa-solid fa-location-dot"></i> ${crop.location || 'Local'} (${crop.pincode})</div>
-                <div class="crop-footer">
-                  <span class="price">₹${crop.price}/${crop.unit}</span>
-                  <button class="btn-primary" onclick="window.showListing('${crop.id}')">Details</button>
+          ${filtered.map(crop => {
+    const dist = state.location ? calculateDistance(state.location.lat, state.location.lng, crop.lat, crop.lng) : null;
+    return `
+              <div class="crop-card">
+                <img src="${crop.image_url || 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&q=80&w=400'}" class="crop-image">
+                <div class="crop-details">
+                  <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+                    <div class="crop-name">${crop.name}</div>
+                    ${crop.is_verified ? '<i class="fa-solid fa-certificate" style="color:#2D6A4F;" title="Verified"></i>' : ''}
+                  </div>
+                  <div class="crop-location" style="display:flex; justify-content:space-between;">
+                    <span><i class="fa-solid fa-location-dot"></i> ${crop.location || 'Local'}</span>
+                    ${dist ? `<span style="color:var(--primary); font-weight:600;">${dist} km</span>` : ''}
+                  </div>
+                  <div class="crop-footer">
+                    <span class="price">₹${crop.price}/${crop.unit}</span>
+                    <button class="btn-primary" onclick="window.showListing('${crop.id}')">Details</button>
+                  </div>
                 </div>
               </div>
-            </div>
-          `).join('') || '<div style="grid-column:1/-1; text-align:center; padding:4rem;">No crops match your search.</div>'}
+            `;
+  }).join('') || '<div style="grid-column:1/-1; text-align:center; padding:4rem;">No crops match your search.</div>'}
         </section>
       </div>
     </div>
@@ -562,7 +608,13 @@ const AddListingView = () => `
           <input type="text" name="pincode" required placeholder="6-digit pincode" 
                  style="width:100%; padding:14px; border-radius:14px; border:1px solid #E5E7EB;">
         </div>
-        <button type="submit" class="btn-primary" style="padding:16px; font-size:1rem; margin-top:1rem;">Publish to Marketplace</button>
+        <div>
+          <label style="display:block; font-weight:600; margin-bottom:8px;">Crop Images (Multiple Support)</label>
+          <input type="file" id="listing-images" multiple accept="image/*" 
+                 style="width:100%; padding:14px; border-radius:14px; border:1px dashed #E5E7EB; background: #F9FAFB;">
+          <p style="font-size: 0.75rem; color: grey; margin-top: 5px;">Upload real photos of your harvest for faster sales.</p>
+        </div>
+        <button type="submit" class="btn-primary" id="publish-btn" style="padding:16px; font-size:1rem; margin-top:1rem;">Publish to Marketplace</button>
       </form>
     </div>
   </div>
@@ -971,7 +1023,12 @@ const KhataView = () => {
 
   return `
     <div class="fade-in">
-      ${Header("Farmer's Digital Khata")}
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 2rem;">
+        ${Header("Farmer's Digital Khata")}
+        <button class="btn-primary" style="background:#1B4332;" onclick="window.exportKhataToPDF()">
+          <i class="fa-solid fa-file-pdf"></i> Download Statement
+        </button>
+      </div>
       <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem; margin-bottom: 2.5rem;">
         <div class="glass-card" style="border-bottom: 4px solid #10B981;">
           <div style="color: grey; font-size: 0.85rem;">Total Income</div>
@@ -1070,6 +1127,44 @@ window.askAdvisor = () => {
       </div>
     `;
   }, 1500);
+};
+
+window.exportKhataToPDF = () => {
+  const doc = new jsPDF();
+  doc.setFontSize(20);
+  doc.setTextColor(27, 67, 50);
+  doc.text("KhetGo: Financial Statement", 14, 22);
+
+  doc.setFontSize(10);
+  doc.setTextColor(100);
+  doc.text(`Generated on: ${new Date().toLocaleString()}`, 14, 30);
+  doc.text(`Farmer: ${state.profile?.full_name || 'Anonymous'}`, 14, 35);
+
+  const tableData = state.ledgerEntries.map(e => [
+    new Date(e.created_at).toLocaleDateString(),
+    e.title,
+    e.type.toUpperCase(),
+    `Rs. ${e.amount.toLocaleString()}`
+  ]);
+
+  doc.autoTable({
+    startY: 45,
+    head: [['Date', 'Description', 'Type', 'Amount']],
+    body: tableData,
+    theme: 'striped',
+    headStyles: { fillColor: [27, 67, 50] }
+  });
+
+  const totalIncome = state.ledgerEntries.filter(e => e.type === 'income').reduce((acc, e) => acc + e.amount, 0);
+  const totalExpense = state.ledgerEntries.filter(e => e.type === 'expense').reduce((acc, e) => acc + e.amount, 0);
+  const finalY = doc.lastAutoTable.finalY + 10;
+
+  doc.text(`Total Income: Rs. ${totalIncome.toLocaleString()}`, 14, finalY);
+  doc.text(`Total Expense: Rs. ${totalExpense.toLocaleString()}`, 14, finalY + 5);
+  doc.text(`Net Balance: Rs. ${(totalIncome - totalExpense).toLocaleString()}`, 14, finalY + 10);
+
+  doc.save(`KhetGo_Statement_${state.profile?.full_name || 'Farmer'}.pdf`);
+  showNotification("Statement Ready", "Your financial report has been downloaded.");
 };
 
 const AdminView = () => `
@@ -1347,7 +1442,34 @@ function bindEvents() {
   if (form) {
     form.onsubmit = async (e) => {
       e.preventDefault();
+      const publishBtn = document.getElementById('publish-btn');
+      const imageInput = document.getElementById('listing-images');
+
       const d = new FormData(form);
+      publishBtn.disabled = true;
+      publishBtn.innerHTML = 'Uploading... <i class="fa-solid fa-spinner fa-spin"></i>';
+
+      let imageUrl = 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&q=80&w=400';
+
+      // Handle Image Upload to Supabase Storage
+      if (imageInput && imageInput.files.length > 0) {
+        const file = imageInput.files[0];
+        const fileExt = file.name.split('.').pop();
+        const fileName = `${Math.random()}.${fileExt}`;
+        const filePath = `${state.user.id}/${fileName}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from('listings')
+          .upload(filePath, file);
+
+        if (!uploadError) {
+          const { data: { publicUrl } } = supabase.storage
+            .from('listings')
+            .getPublicUrl(filePath);
+          imageUrl = publicUrl;
+        }
+      }
+
       const payload = {
         name: d.get('name'),
         price: parseFloat(d.get('price')),
@@ -1358,17 +1480,23 @@ function bindEvents() {
         pincode: d.get('pincode'),
         owner_id: state.user.id,
         is_verified: state.profile?.is_verified || false,
-        image_url: 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&q=80&w=400'
+        image_url: imageUrl,
+        lat: state.location?.lat || null,
+        lng: state.location?.lng || null
       };
 
       const { error } = await supabase.from('listings').insert([payload]);
       if (!error) {
+        showNotification("Success!", "Your crop listing is now live.");
         alert('Listing live on KhetGo!');
         window.setView('marketplace');
+      } else {
+        alert('Error: ' + error.message);
+        publishBtn.disabled = false;
+        publishBtn.innerText = 'Publish to Marketplace';
       }
     };
   }
-
   // Chat Input Enter Key
   const chatInput = document.getElementById('chat-input');
   if (chatInput) {
