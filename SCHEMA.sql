@@ -155,22 +155,55 @@ alter table public.ledger_entries enable row level security;
 alter table public.academy_content enable row level security;
 
 -- Policies (Basic)
+drop policy if exists "Select Prof" on public.profiles;
 create policy "Select Prof" on public.profiles for select using (true);
+
+drop policy if exists "Update Prof" on public.profiles;
 create policy "Update Prof" on public.profiles for update using (auth.uid() = id);
+
+drop policy if exists "Select Mandi" on public.mandi_prices;
 create policy "Select Mandi" on public.mandi_prices for select using (true);
+
+drop policy if exists "Select List" on public.listings;
 create policy "Select List" on public.listings for select using (true);
+
+drop policy if exists "Insert List" on public.listings;
 create policy "Insert List" on public.listings for insert with check (auth.role() = 'authenticated');
+
+drop policy if exists "Delete List" on public.listings;
 create policy "Delete List" on public.listings for delete using (auth.uid() = owner_id);
+
+drop policy if exists "Select Service" on public.agri_services;
 create policy "Select Service" on public.agri_services for select using (true);
+
+drop policy if exists "Select Store" on public.store_products;
 create policy "Select Store" on public.store_products for select using (true);
+
+drop policy if exists "Select Forum" on public.forum_posts;
 create policy "Select Forum" on public.forum_posts for select using (true);
+
+drop policy if exists "Select News" on public.news_articles;
 create policy "Select News" on public.news_articles for select using (true);
+
+drop policy if exists "Select Book" on public.bookings;
 create policy "Select Book" on public.bookings for select using (auth.uid() = user_id);
+
+drop policy if exists "Insert Book" on public.bookings;
 create policy "Insert Book" on public.bookings for insert with check (auth.role() = 'authenticated');
+
+drop policy if exists "Select Msg" on public.messages;
 create policy "Select Msg" on public.messages for select using (auth.uid() = sender_id or auth.uid() = receiver_id);
+
+drop policy if exists "Insert Msg" on public.messages;
 create policy "Insert Msg" on public.messages for insert with check (auth.uid() = sender_id);
+
+drop policy if exists "Select Ledger" on public.ledger_entries;
 create policy "Select Ledger" on public.ledger_entries for select using (auth.uid() = user_id);
+
+drop policy if exists "Insert Ledger" on public.ledger_entries;
 create policy "Insert Ledger" on public.ledger_entries for insert with check (auth.uid() = user_id);
+
+drop policy if exists "Select Acad" on public.academy_content;
 create policy "Select Acad" on public.academy_content for select using (true);
 
 -- 14. SEED DATA
