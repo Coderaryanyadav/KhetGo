@@ -15,7 +15,11 @@ let state = {
   searchQuery: '',
   filters: {
     pincode: '',
+    minPrice: 0,
+    maxPrice: 10000,
+    sortBy: 'newest'
   },
+  location: null, // Stores { lat, lng }
   mandiPrices: [
     { id: 1, crop: 'Wheat (Lokan)', price: '₹2,450', unit: 'Quintal', trend: 'up', change: '+2.4%' },
     { id: 2, crop: 'Basmati Rice', price: '₹6,800', unit: 'Quintal', trend: 'up', change: '+1.2%' },
@@ -66,6 +70,15 @@ async function fetchMessages(otherUserId) {
   if (!error) {
     state.messages = data;
     render();
+  }
+}
+
+async function getGeoLocation() {
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition((pos) => {
+      state.location = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+      console.log('Location updated:', state.location);
+    });
   }
 }
 
@@ -171,7 +184,7 @@ const Sidebar = () => `
     </nav>
     <div class="sidebar-footer" style="margin-top: auto; padding-top: 2rem; border-top: 1px solid rgba(255,255,255,0.1);">
       <div style="margin-bottom: 1.5rem;">
-        <div style="font-weight: 700; font-size: 0.95rem; color: var(--accent);">${state.profile?.full_name || 'User'}</div>
+        <div style="font-weight: 700; font-size: 0.95rem; color: var(--accent); cursor: pointer;" onclick="window.setView('profile')">${state.profile?.full_name || 'User'}</div>
         <div style="font-size: 0.75rem; color: rgba(255,255,255,0.5); text-transform: uppercase; letter-spacing: 0.05em;">${state.profile?.role || 'Member'}</div>
       </div>
       <div class="nav-link" style="color: #FF6B6B;" onclick="window.logout()">
@@ -424,23 +437,49 @@ const MandiMarketsView = () => `
 `;
 
 const MarketplaceView = () => {
-  const filtered = state.cropListings.filter(c =>
-    c.name.toLowerCase().includes(state.searchQuery.toLowerCase()) ||
-    (c.pincode && c.pincode.includes(state.filters.pincode))
+  let filtered = state.cropListings.filter(c =>
+    (c.name.toLowerCase().includes(state.searchQuery.toLowerCase())) &&
+    (state.filters.pincode === '' || (c.pincode && c.pincode.includes(state.filters.pincode))) &&
+    (c.price >= state.filters.minPrice && c.price <= state.filters.maxPrice)
   );
+
+  // Sorting Logic
+  if (state.filters.sortBy === 'price-low') filtered.sort((a, b) => a.price - b.price);
+  if (state.filters.sortBy === 'price-high') filtered.sort((a, b) => b.price - a.price);
+  if (state.filters.sortBy === 'newest') filtered.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
   return `
     <div class="fade-in">
       ${Header('Marketplace')}
-      <div style="display: grid; grid-template-columns: 260px 1fr; gap: 2.5rem;">
-        <aside class="glass-card" style="height: fit-content; position: sticky; top: 2.5rem;">
-          <h3 style="margin-bottom: 1.5rem;">Filter Selection</h3>
+      <div style="display: grid; grid-template-columns: 280px 1fr; gap: 2.5rem;">
+        <aside class="glass-card" style="height: fit-content; position: sticky; top: 2.5rem; padding: 1.5rem;">
+          <h3 style="margin-bottom: 1.5rem;">Smart Filters</h3>
+          
           <div style="margin-bottom: 1.5rem;">
-            <label style="display:block; font-size:0.85rem; font-weight:600; margin-bottom: 8px;">Area Pincode</label>
+            <label style="display:block; font-size:0.85rem; font-weight:600; margin-bottom: 8px;">Sort By</label>
+            <select id="sort-select" style="width:100%; padding:10px; border-radius:10px; border:1px solid #E5E7EB; background:white;">
+              <option value="newest" ${state.filters.sortBy === 'newest' ? 'selected' : ''}>Newest First</option>
+              <option value="price-low" ${state.filters.sortBy === 'price-low' ? 'selected' : ''}>Price: Low to High</option>
+              <option value="price-high" ${state.filters.sortBy === 'price-high' ? 'selected' : ''}>Price: High to Low</option>
+            </select>
+          </div>
+
+          <div style="margin-bottom: 1.5rem;">
+            <label style="display:block; font-size:0.85rem; font-weight:600; margin-bottom: 8px;">Max Price: ₹${state.filters.maxPrice}</label>
+            <input type="range" id="price-range" min="0" max="10000" step="100" value="${state.filters.maxPrice}" style="width:100%; accent-color: var(--primary);">
+          </div>
+
+          <div style="margin-bottom: 1.5rem;">
+            <label style="display:block; font-size:0.85rem; font-weight:600; margin-bottom: 8px;">Region Pincode</label>
             <input type="text" id="filter-pincode" placeholder="e.g. 4400" value="${state.filters.pincode}" 
                    style="width:100%; padding:10px; border-radius:10px; border:1px solid #E5E7EB; outline:none;">
           </div>
-          <button class="btn-primary" style="width:100%;" onclick="fetchAllData()">Reset Filters</button>
+          
+          <div style="background: #F0FDF4; padding: 10px; border-radius: 10px; font-size: 0.75rem; color: var(--primary); margin-bottom: 1.5rem;">
+            <i class="fa-solid fa-location-crosshairs"></i> ${state.location ? 'Nearby mode active' : 'Enable GPS for distance sorting'}
+          </div>
+
+          <button class="btn-primary" style="width:100%;" onclick="window.resetFilters()">Reset All</button>
         </aside>
         
         <section class="marketplace-grid">
@@ -807,6 +846,36 @@ const InboxView = () => {
   `;
 };
 
+const ProfileView = () => `
+  <div class="fade-in">
+    ${Header('Your Profile')}
+    <div class="glass-card" style="max-width: 600px; margin: 0 auto;">
+      <div style="text-align:center; margin-bottom: 2rem;">
+        <img src="https://ui-avatars.com/api/?name=${state.profile?.full_name || 'User'}&background=1B4332&color=fff&size=100" style="border-radius: 30px; margin-bottom: 1rem;">
+        <h2>${state.profile?.full_name}</h2>
+        <div class="verified-badge" style="display:inline-flex;">${state.profile?.role === 'farmer' ? 'Verified Farmer' : 'Registered Buyer'}</div>
+      </div>
+      <form id="profile-form" style="display: flex; flex-direction: column; gap: 1.2rem;">
+        <div>
+          <label style="display:block; font-weight:600; margin-bottom:5px;">Farmer Bio</label>
+          <textarea name="bio" style="width:100%; padding:14px; border-radius:12px; border:1px solid #E5E7EB; height:100px;">${state.profile?.bio || ''}</textarea>
+        </div>
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+          <div>
+            <label style="display:block; font-weight:600; margin-bottom:5px;">District</label>
+            <input type="text" name="district" value="${state.profile?.district || ''}" style="width:100%; padding:12px; border-radius:10px; border:1px solid #ddd;">
+          </div>
+          <div>
+            <label style="display:block; font-weight:600; margin-bottom:5px;">Pincode</label>
+            <input type="text" name="pincode" value="${state.profile?.pincode || ''}" style="width:100%; padding:12px; border-radius:10px; border:1px solid #ddd;">
+          </div>
+        </div>
+        <button type="submit" class="btn-primary">Update Profile</button>
+      </form>
+    </div>
+  </div>
+`;
+
 const ForumView = () => `
   <div class="fade-in">
     ${Header('Community Forum')}
@@ -1033,6 +1102,11 @@ window.bookService = async (itemName, price) => {
   }
 };
 
+window.resetFilters = () => {
+  state.filters = { pincode: '', minPrice: 0, maxPrice: 10000, sortBy: 'newest' };
+  render();
+};
+
 window.logout = async () => {
   await supabase.auth.signOut();
   state.user = null;
@@ -1071,6 +1145,7 @@ function render() {
     case 'chat': content = ChatView(); break;
     case 'inbox': content = InboxView(); break;
     case 'forum': content = ForumView(); break;
+    case 'profile': content = ProfileView(); break;
     case 'news': content = NewsView(); break;
     case 'agri-store': content = AgriStoreView(); break;
     case 'soil-testing': content = SoilTestingView(); break;
@@ -1191,6 +1266,43 @@ function bindEvents() {
   if (chatInput) {
     chatInput.onkeypress = (e) => {
       if (e.key === 'Enter') window.sendMessage();
+    };
+  }
+
+  // Price Range
+  const priceRange = document.getElementById('price-range');
+  if (priceRange) {
+    priceRange.oninput = (e) => {
+      state.filters.maxPrice = parseInt(e.target.value);
+      render();
+    };
+  }
+
+  // Sort
+  const sortSelect = document.getElementById('sort-select');
+  if (sortSelect) {
+    sortSelect.onchange = (e) => {
+      state.filters.sortBy = e.target.value;
+      render();
+    };
+  }
+
+  // Profile Form
+  const profileForm = document.getElementById('profile-form');
+  if (profileForm) {
+    profileForm.onsubmit = async (e) => {
+      e.preventDefault();
+      const d = new FormData(profileForm);
+      const { error } = await supabase.from('profiles').update({
+        bio: d.get('bio'),
+        district: d.get('district'),
+        pincode: d.get('pincode')
+      }).eq('id', state.user.id);
+
+      if (!error) {
+        alert('Profile Updated!');
+        checkAuth();
+      }
     };
   }
 
