@@ -316,31 +316,31 @@ const Sidebar = () => `
       <span>KhetGo</span>
     </div>
     <nav class="nav-links">
-      <div class="nav-link ${state.currentView === 'dashboard' ? 'active' : ''}" onclick="window.setView('dashboard')">
+      <div class="nav-link ${state.currentView === 'dashboard' ? 'active' : ''}" data-view="dashboard">
         <i class="fa-solid fa-chart-pie"></i>
         <span>${t('dashboard')}</span>
       </div>
-      <div class="nav-link ${state.currentView === 'marketplace' ? 'active' : ''}" onclick="window.setView('marketplace')">
+      <div class="nav-link ${state.currentView === 'marketplace' ? 'active' : ''}" data-view="marketplace">
         <i class="fa-solid fa-shop"></i>
         <span>${t('marketplace')}</span>
       </div>
-      <div class="nav-link ${state.currentView === 'services' ? 'active' : ''}" onclick="window.setView('services')">
+      <div class="nav-link ${state.currentView === 'services' ? 'active' : ''}" data-view="services">
         <i class="fa-solid fa-truck-pickup"></i>
         <span>${t('rentals')}</span>
       </div>
-      <div class="nav-link ${state.currentView === 'advisor' ? 'active' : ''}" onclick="window.setView('advisor')">
+      <div class="nav-link ${state.currentView === 'advisor' ? 'active' : ''}" data-view="advisor">
         <i class="fa-solid fa-robot"></i>
         <span>${t('advisor')}</span>
       </div>
-      <div class="nav-link ${state.currentView === 'khata' ? 'active' : ''}" onclick="window.setView('khata')">
+      <div class="nav-link ${state.currentView === 'khata' ? 'active' : ''}" data-view="khata">
         <i class="fa-solid fa-book"></i>
         <span>${t('khata')}</span>
       </div>
-      <div class="nav-link ${state.currentView === 'academy' ? 'active' : ''}" onclick="window.setView('academy')">
+      <div class="nav-link ${state.currentView === 'academy' ? 'active' : ''}" data-view="academy">
         <i class="fa-solid fa-graduation-cap"></i>
         <span>${t('academy')}</span>
       </div>
-      <div class="nav-link ${state.currentView === 'forum' ? 'active' : ''}" onclick="window.setView('forum')">
+      <div class="nav-link ${state.currentView === 'forum' ? 'active' : ''}" data-view="forum">
         <i class="fa-solid fa-users"></i>
         <span>${t('community')}</span>
       </div>
@@ -396,8 +396,8 @@ const DashboardView = () => `
     : 'Your digital farm operations are synchronized. Check newest market trends or update your harvest status.'}
             </p>
             <div style="display: flex; gap: 1rem;">
-              <button class="btn-primary" style="background: var(--accent); color: var(--primary-dark); font-weight: 800;" onclick="window.setView('add-listing')">Post Your Harvest</button>
-              <button class="btn-primary" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); backdrop-filter: blur(5px);" onclick="window.setView('marketplace')">Explore Market</button>
+              <button class="btn-primary" onclick="window.setView('add-listing')">Post Your Harvest</button>
+              <button class="btn-outline" style="border-color: rgba(255,255,255,0.3); color: white;" onclick="window.setView('marketplace')">Explore Market</button>
             </div>
           </div>
         </div>
@@ -407,7 +407,9 @@ const DashboardView = () => `
             <h2 style="font-size: 1.75rem; color: var(--text-main);">Market Trends</h2>
             <p style="color: var(--text-muted); font-size: 0.9rem;">Real-time opportunities in your region</p>
           </div>
-          <button class="nav-link" style="color: var(--secondary); padding: 0; font-size: 1rem;" onclick="window.setView('marketplace')">View Marketplace <i class="fa-solid fa-arrow-right"></i></button>
+          <button class="btn-ghost" style="color: var(--secondary); display: flex; align-items: center; gap: 8px; font-weight: 800; cursor: pointer;" onclick="window.setView('marketplace')">
+            Manage Global Ecosystem <i class="fa-solid fa-arrow-right-long"></i>
+          </button>
         </div>
         
         <div class="marketplace-grid">
@@ -433,7 +435,7 @@ const DashboardView = () => `
               <i class="fa-solid fa-seedling" style="font-size: 3rem; color: var(--accent); margin-bottom: 1.5rem; opacity: 0.5;"></i>
               <h3 style="color: var(--text-muted);">No active listings in your zone</h3>
               <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 0.5rem;">Be the local pioneer and post your first harvest today!</p>
-              <button class="btn-primary" style="margin-top: 1.5rem;" onclick="window.setView('add-listing')">Create Listing</button>
+              <button class="btn-primary" style="margin-top: 1.5rem; padding: 14px 40px;" onclick="window.setView('add-listing')">Initialize New Listing</button>
             </div>
           `}
         </div>

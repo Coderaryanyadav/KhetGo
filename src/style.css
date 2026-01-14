@@ -39,15 +39,17 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0D1117;
-    --card-bg: rgba(22, 27, 34, 0.8);
-    --text-main: #E6EDF3;
+    --background: #080C10;
+    --card-bg: rgba(22, 27, 34, 0.9);
+    --text-main: #F0F6FC;
     --text-muted: #8B949E;
-    --white: #ffffff;
-    --shadow: 0 15px 40px rgba(0, 0, 0, 0.45);
+    --white: #F0F6FC;
+    --shadow: 0 15px 40px rgba(0, 0, 0, 0.6);
     --primary: #2D6A4F;
-    --primary-light: #40916C;
+    --primary-light: #52B788;
     --primary-dark: #1B4332;
+    --glass-border: rgba(255, 255, 255, 0.05);
+    --glass-hover: rgba(255, 255, 255, 0.1);
   }
 }
 
@@ -227,7 +229,21 @@ header h1::after {
 .search-bar:focus-within {
   width: 480px;
   border-color: var(--secondary);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
+}
+
+.search-bar input {
+  background: transparent;
+  border: none;
+  color: var(--text-main);
+  width: 100%;
+  font-weight: 600;
+  outline: none;
+}
+
+.search-bar input::placeholder {
+  color: var(--text-muted);
+  opacity: 0.6;
 }
 
 .user-profile {
@@ -351,22 +367,63 @@ header h1::after {
   color: var(--primary-light);
 }
 
+/* Button Global System */
 .btn-primary {
-  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
-  color: var(--white);
+  background: linear-gradient(135deg, var(--secondary) 0%, var(--primary-light) 100%);
+  color: white !important;
   border: none;
-  padding: 12px 28px;
-  border-radius: 14px;
-  font-weight: 700;
+  padding: 14px 32px;
+  border-radius: 16px;
+  font-weight: 800;
   cursor: pointer;
   transition: var(--transition);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: center;
+  box-shadow: 0 8px 25px rgba(64, 145, 108, 0.25);
   font-size: 1rem;
-  box-shadow: 0 4px 15px rgba(27, 67, 50, 0.2);
 }
 
 .btn-primary:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 25px rgba(27, 67, 50, 0.3);
+  transform: translateY(-4px);
+  box-shadow: 0 12px 35px rgba(64, 145, 108, 0.45);
+}
+
+.btn-ghost {
+  background: transparent;
+  border: none;
+  padding: 12px 20px;
+  border-radius: 14px;
+  font-weight: 700;
+  color: var(--text-main);
+  cursor: pointer;
+  transition: var(--transition);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-ghost:hover {
+  background: var(--glass-hover);
+  color: var(--secondary);
+}
+
+.btn-outline {
+  background: transparent;
+  border: 1.5px solid var(--secondary);
+  color: var(--secondary);
+  padding: 12px 24px;
+  border-radius: 14px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.btn-outline:hover {
+  background: var(--secondary);
+  color: white;
+  box-shadow: 0 8px 20px rgba(64, 145, 108, 0.2);
 }
 
 /* Mandi List */
@@ -439,9 +496,9 @@ header h1::after {
 .btn-delete {
   color: #DC2626;
   background: rgba(220, 38, 38, 0.08);
-  border: none;
+  border: 1px solid rgba(220, 38, 38, 0.1);
   padding: 10px 20px;
-  border-radius: 12px;
+  border-radius: 14px;
   font-weight: 700;
   cursor: pointer;
   transition: var(--transition);
@@ -449,7 +506,8 @@ header h1::after {
 
 .btn-delete:hover {
   background: #DC2626;
-  color: var(--white);
+  color: white;
+  box-shadow: 0 8px 15px rgba(220, 38, 38, 0.2);
 }
 
 /* Animations */
@@ -960,16 +1018,7 @@ header h1::after {
   }
 }
 
-/* Dark mode support (for future) */
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0f1419;
-    --card-bg: #1a1f2e;
-    --text-main: #e8eaed;
-    --text-muted: #9aa0a6;
-    --shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.4);
-  }
-}
+/* Safe area insets for notched devices (iPhone X+) */
 
 /* Safe area insets for notched devices (iPhone X+) */
 @supports (padding: max(0px)) {

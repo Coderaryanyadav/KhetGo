@@ -1,13 +1,16 @@
--- KhetGo REAL Backend Schema (No Mock Data Version)
+-- KhetGo: All-in-One Supabase Backend Schema
+-- Comprehensive tables, RLS policies, triggers, and premium seed data
 
--- 1. Enable UUID
+-- 1. EXTENSIONS
 create extension if not exists "uuid-ossp";
 
--- 2. Profiles (Extended)
+-- 2. TABLES
+
+-- Profiles Registry
 create table if not exists public.profiles (
   id uuid references auth.users on delete cascade primary key,
   full_name text,
-  role text check (role in ('farmer', 'buyer', 'admin')),
+  role text check (role in ('farmer', 'buyer', 'admin')) default 'farmer',
   avatar_url text,
   bio text,
   district text,
@@ -19,7 +22,7 @@ create table if not exists public.profiles (
   created_at timestamp with time zone default timezone('utc'::text, now())
 );
 
--- 3. Mandi Prices (Live Feed)
+-- Mandi Prices (Volatility Feed)
 create table if not exists public.mandi_prices (
   id uuid default uuid_generate_v4() primary key,
   crop text unique not null,
@@ -31,7 +34,7 @@ create table if not exists public.mandi_prices (
   updated_at timestamp with time zone default timezone('utc'::text, now())
 );
 
--- 4. Listings (Crops)
+-- Marketplace Listings
 create table if not exists public.listings (
   id uuid default uuid_generate_v4() primary key,
   owner_id uuid references public.profiles(id) on delete cascade,
@@ -43,7 +46,6 @@ create table if not exists public.listings (
   description text,
   pincode text,
   image_url text,
-  gallery_urls text[],
   harvest_date date,
   is_verified boolean default false,
   lat numeric,
@@ -51,18 +53,7 @@ create table if not exists public.listings (
   created_at timestamp with time zone default timezone('utc'::text, now())
 );
 
--- Ensure columns exist if table was already created
-do $$ 
-begin 
-  if not exists (select 1 from information_schema.columns where table_name='listings' and column_name='lat') then
-    alter table public.listings add column lat numeric;
-  end if;
-  if not exists (select 1 from information_schema.columns where table_name='listings' and column_name='lng') then
-    alter table public.listings add column lng numeric;
-  end if;
-end $$;
-
--- 5. Agri Services (Rentals)
+-- Agri Services (Rentals)
 create table if not exists public.agri_services (
   id uuid default uuid_generate_v4() primary key,
   title text unique not null,
@@ -74,7 +65,7 @@ create table if not exists public.agri_services (
   created_at timestamp with time zone default timezone('utc'::text, now())
 );
 
--- 6. Agri Store (Products)
+-- Agri Store (Premium Products)
 create table if not exists public.store_products (
   id uuid default uuid_generate_v4() primary key,
   name text unique not null,
@@ -88,7 +79,7 @@ create table if not exists public.store_products (
   created_at timestamp with time zone default timezone('utc'::text, now())
 );
 
--- 7. Community Forum
+-- Community Forum Posts
 create table if not exists public.forum_posts (
   id uuid default uuid_generate_v4() primary key,
   author_id uuid references public.profiles(id) on delete cascade,
@@ -99,7 +90,7 @@ create table if not exists public.forum_posts (
   created_at timestamp with time zone default timezone('utc'::text, now())
 );
 
--- 8. News Articles (Agri-Buzz)
+-- News Articles (Intelligence Feed)
 create table if not exists public.news_articles (
   id uuid default uuid_generate_v4() primary key,
   title text unique not null,
@@ -110,39 +101,18 @@ create table if not exists public.news_articles (
   created_at timestamp with time zone default timezone('utc'::text, now())
 );
 
--- Ensure unique constraints for idempotent seeding
-do $$ 
-begin 
-  if not exists (select 1 from information_schema.table_constraints where table_name='mandi_prices' and constraint_type='UNIQUE') then
-    alter table public.mandi_prices add constraint mandi_prices_crop_unique unique (crop);
-  end if;
-  if not exists (select 1 from information_schema.table_constraints where table_name='news_articles' and constraint_type='UNIQUE') then
-    alter table public.news_articles add constraint news_articles_title_unique unique (title);
-  end if;
-  if not exists (select 1 from information_schema.table_constraints where table_name='store_products' and constraint_type='UNIQUE') then
-    alter table public.store_products add constraint store_products_name_unique unique (name);
-  end if;
-  if not exists (select 1 from information_schema.table_constraints where table_name='agri_services' and constraint_type='UNIQUE') then
-    alter table public.agri_services add constraint agri_services_title_unique unique (title);
-  end if;
-  if not exists (select 1 from information_schema.table_constraints where table_name='academy_content' and constraint_type='UNIQUE') then
-    alter table public.academy_content add constraint academy_content_title_unique unique (title);
-  end if;
-end $$;
-
--- 9. Bookings & Orders
+-- Bookings & Transaction Records
 create table if not exists public.bookings (
   id uuid default uuid_generate_v4() primary key,
   user_id uuid references public.profiles(id) on delete cascade,
-  item_id uuid,
   item_name text not null,
-  item_type text check (item_type in ('Produce', 'Service', 'StoreProduct')),
+  item_type text check (item_type in ('Produce', 'Service', 'Product')),
   price_per_unit numeric,
   status text default 'pending',
   booking_date timestamp with time zone default timezone('utc'::text, now())
 );
 
--- 10. Direct Messages
+-- Encrypted Message Threads
 create table if not exists public.messages (
   id uuid default uuid_generate_v4() primary key,
   sender_id uuid references public.profiles(id) on delete cascade,
@@ -151,21 +121,20 @@ create table if not exists public.messages (
   created_at timestamp with time zone default timezone('utc'::text, now())
 );
 
--- 11. Farmer's Khata (Ledger)
+-- Farmer's Khata (Digital Ledger)
 create table if not exists public.ledger_entries (
   id uuid default uuid_generate_v4() primary key,
   user_id uuid references public.profiles(id) on delete cascade,
   title text not null,
   amount numeric not null,
   type text check (type in ('income', 'expense')),
-  category text,
   created_at timestamp with time zone default timezone('utc'::text, now())
 );
 
--- 12. KhetGo Academy (Learning Content)
+-- KhetGo Academy (Educational Assets)
 create table if not exists public.academy_content (
   id uuid default uuid_generate_v4() primary key,
-  title text not null,
+  title text unique not null,
   description text,
   video_url text,
   thumbnail_url text,
@@ -173,7 +142,31 @@ create table if not exists public.academy_content (
   created_at timestamp with time zone default timezone('utc'::text, now())
 );
 
--- 13. Security (RLS)
+-- 3. AUTOMATION (TRIGGERS)
+
+-- Create a profile automatically when a user signs up
+create or replace function public.handle_new_user()
+returns trigger as $$
+begin
+  insert into public.profiles (id, full_name, role, phone)
+  values (
+    new.id,
+    new.raw_user_meta_data->>'full_name',
+    coalesce(new.raw_user_meta_data->>'role', 'farmer'),
+    new.raw_user_meta_data->>'phone'
+  );
+  return new;
+end;
+$$ language plpgsql security definer;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute procedure public.handle_new_user();
+
+-- 4. SECURITY (RLS & POLICIES)
+
+-- Enable RLS on all tables
 alter table public.profiles enable row level security;
 alter table public.mandi_prices enable row level security;
 alter table public.listings enable row level security;
@@ -186,104 +179,94 @@ alter table public.messages enable row level security;
 alter table public.ledger_entries enable row level security;
 alter table public.academy_content enable row level security;
 
--- Policies (Basic)
-drop policy if exists "Select Prof" on public.profiles;
-create policy "Select Prof" on public.profiles for select using (true);
+-- Profile Policies
+create policy "Profiles are viewable by everyone" on public.profiles for select using (true);
+create policy "Users can update their own profile" on public.profiles for update using (auth.uid() = id);
 
-drop policy if exists "Update Prof" on public.profiles;
-create policy "Update Prof" on public.profiles for update using (auth.uid() = id or (select role from profiles where id = auth.uid()) = 'admin');
+-- Mandi Policies
+create policy "Mandi data is viewable by everyone" on public.mandi_prices for select using (true);
+create policy "Admins can manage mandi prices" on public.mandi_prices for all using (
+  exists (select 1 from public.profiles where id = auth.uid() and role = 'admin')
+);
 
-drop policy if exists "Select Mandi" on public.mandi_prices;
-create policy "Select Mandi" on public.mandi_prices for select using (true);
+-- Marketplace Policies
+create policy "Listings are viewable by everyone" on public.listings for select using (true);
+create policy "Authenticated users can create listings" on public.listings for insert with check (auth.role() = 'authenticated');
+create policy "Owners can manage their listings" on public.listings for all using (
+  auth.uid() = owner_id or exists (select 1 from public.profiles where id = auth.uid() and role = 'admin')
+);
 
-drop policy if exists "All Mandi Admin" on public.mandi_prices;
-create policy "All Mandi Admin" on public.mandi_prices for all using ((select role from profiles where id = auth.uid()) = 'admin');
+-- Agri Store & Services Policies
+create policy "Store and Services are viewable by everyone" on public.agri_services for select using (true);
+create policy "Store products are viewable by everyone" on public.store_products for select using (true);
+create policy "Admins can manage store and services" on public.store_products for all using (
+  exists (select 1 from public.profiles where id = auth.uid() and role = 'admin')
+);
+create policy "Admins can manage agri services" on public.agri_services for all using (
+  exists (select 1 from public.profiles where id = auth.uid() and role = 'admin')
+);
 
-drop policy if exists "Select List" on public.listings;
-create policy "Select List" on public.listings for select using (true);
+-- Forum & News Policies
+create policy "Forum posts are viewable by everyone" on public.forum_posts for select using (true);
+create policy "Members can create forum posts" on public.forum_posts for insert with check (auth.role() = 'authenticated');
+create policy "News is viewable by everyone" on public.news_articles for select using (true);
+create policy "Admins can manage news" on public.news_articles for all using (
+  exists (select 1 from public.profiles where id = auth.uid() and role = 'admin')
+);
 
-drop policy if exists "Insert List" on public.listings;
-create policy "Insert List" on public.listings for insert with check (auth.role() = 'authenticated');
+-- Transactions & Bookings Policies
+create policy "Users can see their own bookings" on public.bookings for select using (
+  auth.uid() = user_id or exists (select 1 from public.profiles where id = auth.uid() and role = 'admin')
+);
+create policy "Authenticated users can create bookings" on public.bookings for insert with check (auth.role() = 'authenticated');
 
-drop policy if exists "Update List Admin" on public.listings;
-create policy "Update List Admin" on public.listings for update using (auth.uid() = owner_id or (select role from profiles where id = auth.uid()) = 'admin');
+-- Ledger Policies
+create policy "Users can see their own ledger" on public.ledger_entries for select using (auth.uid() = user_id);
+create policy "Users can manage their own ledger" on public.ledger_entries for all using (auth.uid() = user_id);
 
-drop policy if exists "Delete List" on public.listings;
-create policy "Delete List" on public.listings for delete using (auth.uid() = owner_id or (select role from profiles where id = auth.uid()) = 'admin');
+-- Communication Policies
+create policy "Users can see their own messages" on public.messages for select using (auth.uid() = sender_id or auth.uid() = receiver_id);
+create policy "Users can send messages" on public.messages for insert with check (auth.uid() = sender_id);
 
-drop policy if exists "Select Service" on public.agri_services;
-create policy "Select Service" on public.agri_services for select using (true);
+-- Academy Policies
+create policy "Academy content is viewable by everyone" on public.academy_content for select using (true);
+create policy "Admins can manage academy content" on public.academy_content for all using (
+  exists (select 1 from public.profiles where id = auth.uid() and role = 'admin')
+);
 
-drop policy if exists "All Service Admin" on public.agri_services;
-create policy "All Service Admin" on public.agri_services for all using ((select role from profiles where id = auth.uid()) = 'admin');
+-- 5. PREMIUM SEED DATA
 
-drop policy if exists "Select Store" on public.store_products;
-create policy "Select Store" on public.store_products for select using (true);
-
-drop policy if exists "All Store Admin" on public.store_products;
-create policy "All Store Admin" on public.store_products for all using ((select role from profiles where id = auth.uid()) = 'admin');
-
-drop policy if exists "Select Forum" on public.forum_posts;
-create policy "Select Forum" on public.forum_posts for select using (true);
-
-drop policy if exists "Delete Forum Admin" on public.forum_posts;
-create policy "Delete Forum Admin" on public.forum_posts for delete using (auth.uid() = author_id or (select role from profiles where id = auth.uid()) = 'admin');
-
-drop policy if exists "Select News" on public.news_articles;
-create policy "Select News" on public.news_articles for select using (true);
-
-drop policy if exists "All News Admin" on public.news_articles;
-create policy "All News Admin" on public.news_articles for all using ((select role from profiles where id = auth.uid()) = 'admin');
-
-drop policy if exists "Select Book" on public.bookings;
-create policy "Select Book" on public.bookings for select using (auth.uid() = user_id or (select role from profiles where id = auth.uid()) = 'admin');
-
-drop policy if exists "Update Book Admin" on public.bookings;
-create policy "Update Book Admin" on public.bookings for update using ((select role from profiles where id = auth.uid()) = 'admin');
-
-drop policy if exists "Insert Book" on public.bookings;
-create policy "Insert Book" on public.bookings for insert with check (auth.role() = 'authenticated');
-
-drop policy if exists "Select Msg" on public.messages;
-create policy "Select Msg" on public.messages for select using (auth.uid() = sender_id or auth.uid() = receiver_id or (select role from profiles where id = auth.uid()) = 'admin');
-
-drop policy if exists "Insert Msg" on public.messages;
-create policy "Insert Msg" on public.messages for insert with check (auth.uid() = sender_id);
-
-drop policy if exists "Select Ledger" on public.ledger_entries;
-create policy "Select Ledger" on public.ledger_entries for select using (auth.uid() = user_id or (select role from profiles where id = auth.uid()) = 'admin');
-
-drop policy if exists "Insert Ledger" on public.ledger_entries;
-create policy "Insert Ledger" on public.ledger_entries for insert with check (auth.uid() = user_id);
-
-drop policy if exists "Select Acad" on public.academy_content;
-create policy "Select Acad" on public.academy_content for select using (true);
-
-drop policy if exists "All Acad Admin" on public.academy_content;
-create policy "All Acad Admin" on public.academy_content for all using ((select role from profiles where id = auth.uid()) = 'admin');
-
--- 14. SEED DATA (Idempotent)
-insert into public.mandi_prices (crop, price, change_pct, trend) values 
-('Wheat', 2450, '+2.1%', 'up'),
-('Mustard', 5600, '-1.4%', 'down'),
-('Potato', 1200, '+0.5%', 'up')
+-- Volatile Market Feed
+insert into public.mandi_prices (crop, price, change_pct, trend, market_name) values 
+('Premium Wheat', 2850, '+3.2%', 'up', 'Nagpur Central Mandi'),
+('Mustard Grade-A', 5400, '-1.8%', 'down', 'Indore Hub'),
+('Sona Masuri Rice', 4200, '+0.5%', 'up', 'Nashik Market'),
+('Organic Potatoes', 1800, '+2.4%', 'up', 'Pune Agri Hub'),
+('Red Onions', 2100, '-0.9%', 'down', 'Solapur Mandi')
 on conflict (crop) do nothing;
 
-insert into public.news_articles (title, category, image_url) values 
-('New Fertilizer Subsidy Announced', 'Policy', 'https://images.unsplash.com/photo-1628350210274-3c82b33b0394?auto=format&fit=crop&q=80&w=400'),
-('Organic Farming Workshop in Nagpur', 'Event', 'https://images.unsplash.com/photo-1464226184884-fa280b87c399?auto=format&fit=crop&q=80&w=400')
-on conflict do nothing;
+-- Intelligence Feed
+insert into public.news_articles (title, category, content, image_url) values 
+('Export Ban Lifted on Basmati Rice', 'Global Trade', 'The government has lifted the minimum export price for Basmati rice, initializing a massive surge in international demand.', 'https://images.unsplash.com/photo-1586201375761-83865001e31c?auto=format&fit=crop&q=80&w=400'),
+('New Drone Subsidies for Precision Farming', 'Technology', 'Certified farmers can now apply for a 50% subsidy on agricultural drones for automated field monitoring.', 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&q=80&w=400')
+on conflict (title) do nothing;
 
-insert into public.store_products (name, brand, price, unit, category, image_url) values 
-('High Yield Seeds', 'Mahyco', 1200, '20kg', 'Seeds', 'https://images.unsplash.com/photo-1574943320219-553eb213f721?auto=format&fit=crop&q=80&w=400'),
-('Organic Fertilizer', 'IFFCO', 850, '50kg', 'Fertilizer', 'https://images.unsplash.com/photo-1628350210274-3c82b33b0394?auto=format&fit=crop&q=80&w=400')
-on conflict do nothing;
+-- Premium Inventory
+insert into public.store_products (name, brand, price, unit, category, image_url, description) values 
+('Bio-Boost Organic Fertilizer', 'GreenGrow', 1250, '50kg Bag', 'Organic Fertilizer', 'https://images.unsplash.com/photo-1628350210274-3c82b33b0394?auto=format&fit=crop&q=80&w=400', 'Laboratory-tested organic catalyst for soil health.'),
+('High-Yield Paddy Seeds', 'Mahindra', 3400, '25kg Pack', 'Verified Seeds', 'https://images.unsplash.com/photo-1574943320219-553eb213f721?auto=format&fit=crop&q=80&w=400', 'Optimized for high-yield performance in diverse climates.'),
+('Power-Blade Cultivator', 'TATA Agri', 18500, 'Unit', 'Modern Tools', 'https://images.unsplash.com/photo-1530267981375-f0de937f5f13?auto=format&fit=crop&q=80&w=400', 'Industrial-strength hand cultivator for precise soil prep.')
+on conflict (name) do nothing;
 
+-- Industrial Rental Hub
 insert into public.agri_services (title, type, price_per_day, location, image_url) values 
-('Heavy Duty Tractor', 'Rental', 1500, 'Nagpur', 'https://images.unsplash.com/photo-1530267981375-f0de937f5f13?auto=format&fit=crop&q=80&w=400')
-on conflict do nothing;
+('Tractor 55HP (Double Clutch)', 'Industrial', 2500, 'Maharashtra Region', 'https://images.unsplash.com/photo-1530267981375-f0de937f5f13?auto=format&fit=crop&q=80&w=400'),
+('Laser Land Leveler', 'Precision', 4500, 'Punjab/Haryana Hub', 'https://images.unsplash.com/photo-1592982537447-7440770cbfc9?auto=format&fit=crop&q=80&w=400'),
+('Digital Soil Sensor System', 'Diagnostic', 800, 'All-India Service', 'https://images.unsplash.com/photo-1628350210274-3c82b33b0394?auto=format&fit=crop&q=80&w=400')
+on conflict (title) do nothing;
 
-insert into public.academy_content (title, category, thumbnail_url, video_url) values 
-('Mastering Drip Irrigation', 'Technical', 'https://images.unsplash.com/photo-1592982537447-7440770cbfc9?auto=format&fit=crop&q=80&w=400', 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'),
-('Organic Fertilizer Preparation', 'Organic', 'https://images.unsplash.com/photo-1628350210274-3c82b33b0394?auto=format&fit=crop&q=80&w=400', 'https://www.youtube.com/watch?v=dQw4w9WgXcQ')
-on conflict do nothing;
+-- Intelligence Modules (Academy)
+insert into public.academy_content (title, category, description, thumbnail_url, video_url) values 
+('Quantum Crop Diagnostics', 'Technical', 'Advanced methods for identifying spectral signatures of crop stress.', 'https://images.unsplash.com/photo-1464226184884-fa280b87c399?auto=format&fit=crop&q=80&w=400', 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'),
+('Supply Chain Liquidity', 'Economic', 'Managing financial reserves during high market volatility.', 'https://images.unsplash.com/photo-1628350210274-3c82b33b0394?auto=format&fit=crop&q=80&w=400', 'https://www.youtube.com/watch?v=dQw4w9WgXcQ')
+on conflict (title) do nothing;
