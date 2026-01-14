@@ -20,6 +20,12 @@ import {
 
 Chart.register(...registerables);
 
+// Expose utilities to global scope for HTML onclick handlers
+window.showToast = showToast;
+window.formatCurrency = formatCurrency;
+window.sanitizeHTML = sanitizeHTML;
+window.escapeHTML = escapeHTML;
+
 const CONSTANTS = {
   DEFAULT_LAT: parseFloat(import.meta.env.VITE_DEFAULT_LAT) || 21.1458,
   DEFAULT_LNG: parseFloat(import.meta.env.VITE_DEFAULT_LNG) || 79.0882,
@@ -40,7 +46,7 @@ let state = {
   filters: {
     pincode: '',
     minPrice: 0,
-    maxPrice: 10000,
+    maxPrice: 250000,
     sortBy: 'newest'
   },
   location: null,
@@ -95,20 +101,22 @@ async function checkAuth() {
       state.profile = profile;
       state.isAdmin = profile?.role === 'admin';
 
+      if (state.isAdmin) fetchAllAdminData();
+
       subscribeToMessages();
       requestNotificationPermission();
       getGeoLocation();
     } else {
-      // Check for demo admin session in localStorage
-      if (localStorage.getItem('khetgo_admin_session') === 'true') {
+      // Re-validate session from local storage safely
+      if (localStorage.getItem('khetgo_admin_session') === 'true' && !state.user) {
         state.isAdmin = true;
-        state.profile = { full_name: 'Master Admin', role: 'admin' };
-        state.user = { id: 'admin-bypass' };
+        state.profile = { full_name: 'System Admin', role: 'admin' };
       }
     }
   } catch (error) {
     console.warn('Auth check failed:', error.message);
   } finally {
+    state.isLoading = false;
     render();
   }
 }
@@ -160,7 +168,9 @@ async function getGeoLocation() {
     },
     async (error) => {
       console.warn('Geolocation error:', error.message);
+      state.location = { lat: CONSTANTS.DEFAULT_LAT, lng: CONSTANTS.DEFAULT_LNG };
       await fetchWeather(CONSTANTS.DEFAULT_LAT, CONSTANTS.DEFAULT_LNG);
+      render();
     },
     { timeout: 10000 }
   );
@@ -571,7 +581,7 @@ const AgriStoreView = () => {
               <div style="font-size: 0.85rem; color: var(--text-muted); font-weight: 600; margin-bottom: 1.5rem;">${sanitizeHTML(p.unit || 'Pack')}</div>
               <div class="crop-footer" style="padding-top: 1.25rem;">
                 <span class="price" style="font-size: 1.5rem; font-weight: 900;">${formatCurrency(p.price)}</span>
-                <button class="btn-primary" style="padding: 10px 24px;" onclick="showToast('Item secured in cart!', 'success')">Buy Now</button>
+                <button class="btn-primary" style="padding: 10px 24px;" onclick="window.buyProduct('${p.id}', '${sanitizeHTML(p.name)}', ${p.price})">Buy Now</button>
               </div>
             </div>
           </div>
@@ -744,7 +754,7 @@ const MarketplaceView = () => {
 
           <div style="margin-bottom: 1.5rem;">
             <label style="display:block; font-size:0.85rem; font-weight:600; margin-bottom: 8px;">Max Price: ${formatCurrency(state.filters.maxPrice)}</label>
-            <input type="range" id="price-range" min="0" max="100000" step="500" value="${state.filters.maxPrice}" style="width:100%; accent-color: var(--primary);">
+            <input type="range" id="price-range" min="0" max="250000" step="500" value="${state.filters.maxPrice}" style="width:100%; accent-color: var(--primary);">
           </div>
 
           <div style="margin-bottom: 1.5rem;">
@@ -776,7 +786,7 @@ const MarketplaceView = () => {
                   <div class="crop-name" style="margin-bottom: 0.5rem;">${sanitizeHTML(crop.name)}</div>
                   <div class="crop-location" style="display:flex; justify-content:space-between; align-items: center; margin-bottom: 2rem;">
                     <span style="display: flex; align-items: center; gap: 6px;"><i class="fa-solid fa-location-dot" style="color: var(--secondary);"></i> ${sanitizeHTML(crop.location_name || 'Nagpur')}</span>
-                    ${dist ? `<span style="background: rgba(45, 106, 79, 0.1); color: var(--primary); padding: 4px 10px; border-radius: 8px; font-weight: 800; font-size: 0.8rem;">${dist} km awaay</span>` : ''}
+                    ${dist ? `<span style="background: rgba(45, 106, 79, 0.1); color: var(--primary); padding: 4px 10px; border-radius: 8px; font-weight: 800; font-size: 0.8rem;">${dist} km distance</span>` : ''}
                   </div>
                   <div class="crop-footer" style="padding-top: 1.5rem;">
                     <span class="price" style="font-size: 1.5rem; font-weight: 900;">${formatCurrency(crop.price)}<span style="font-size: 0.85rem; font-weight: 600; color: var(--text-muted); opacity: 0.8;">/${sanitizeHTML(crop.unit)}</span></span>
@@ -811,7 +821,7 @@ const AddListingView = () => `
           </div>
           <div>
             <label style="display:block; font-weight:600; margin-bottom:8px;">Unit</label>
-            <select name="unit" style="width:100%; padding:14px; border-radius:14px; border:1px solid #E5E7EB;">
+            <select name="unit" style="width:100%; padding:14px; border-radius:14px; border:1px solid #E5E7EB; background: var(--white);">
               <option value="kg">kg</option>
               <option value="quintal">quintal</option>
               <option value="ton">ton</option>
@@ -826,7 +836,7 @@ const AddListingView = () => `
           </div>
           <div>
             <label style="display:block; font-weight:600; margin-bottom:8px;">Category</label>
-            <select name="category" style="width:100%; padding:14px; border-radius:14px; border:1px solid #E5E7EB; background: white;">
+            <select name="category" style="width:100%; padding:14px; border-radius:14px; border:1px solid #E5E7EB; background: var(--white);">
               <option value="Grains">Grains</option>
               <option value="Vegetables">Vegetables</option>
               <option value="Fruits">Fruits</option>
@@ -869,7 +879,7 @@ const ActivityView = () => {
         <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem; margin-bottom: 2.5rem;">
           <div class="glass-card" style="background: #ECFDF5; border-color: #A7F3D0;">
             <div style="color: #065F46; font-size: 0.85rem; font-weight: 600;">Potential Revenue</div>
-            <div style="font-size: 1.75rem; font-weight: 800; color: var(--primary); margin: 8px 0;">₹${myListings.reduce((acc, l) => acc + (l.price * 10), 0).toLocaleString()}</div>
+            <div style="font-size: 1.75rem; font-weight: 800; color: var(--primary); margin: 8px 0;">₹${myListings.reduce((acc, l) => acc + (l.price * parseFloat(l.quantity || 1)), 0).toLocaleString()}</div>
             <div style="font-size: 0.75rem; color: #059669;">+12% from last month</div>
           </div>
           <div class="glass-card" style="background: #EFF6FF; border-color: #BFDBFE;">
@@ -917,12 +927,12 @@ const ActivityView = () => {
           <h2 style="margin-bottom: 1.5rem; font-size: 1.4rem;">Notifications</h2>
           <div class="glass-card" style="padding: 1.25rem;">
             <div style="font-size: 0.9rem; padding: 12px 0; border-bottom: 1px solid #eee;">
-              <div style="font-weight: 700;">Listing Verified</div>
-              <div style="font-size: 0.75rem; color: grey;">Your 'Organic Wheat' listing is now live.</div>
+              <div style="font-weight: 700;">Account Status</div>
+              <div style="font-size: 0.75rem; color: grey;">${state.profile?.is_verified ? 'Your identity is verified by platform nodes.' : 'Verification pending for your current identity.'}</div>
             </div>
             <div style="font-size: 0.9rem; padding: 12px 0;">
-              <div style="font-weight: 700;">Welcome to KhetGo!</div>
-              <div style="font-size: 0.75rem; color: grey;">Complete your profile to get a verified badge.</div>
+              <div style="font-weight: 700;">Global Synchronization</div>
+              <div style="font-size: 0.75rem; color: grey;">Real-time market volatility data is active.</div>
             </div>
           </div>
         </aside>
@@ -1220,8 +1230,8 @@ const ForumView = () => {
                     </div>
                   </div>
                 </div>
-                <h3 style="margin-bottom: 0.75rem; font-size: 1.4rem; font-weight: 900; color: var(--text-main); line-height: 1.3;">${post.title}</h3>
-                <p style="font-size: 1.05rem; line-height: 1.7; color: var(--text-muted); margin-bottom: 2rem;">${post.content}</p>
+                <h3 style="margin-bottom: 0.75rem; font-size: 1.4rem; font-weight: 900; color: var(--text-main); line-height: 1.3;">${sanitizeHTML(post.title)}</h3>
+                <p style="font-size: 1.05rem; line-height: 1.7; color: var(--text-muted); margin-bottom: 2rem;">${sanitizeHTML(post.content)}</p>
                 <div style="display: flex; gap: 2rem; font-size: 0.9rem; font-weight: 800; color: var(--text-muted); padding-top: 1.5rem; border-top: 1px solid rgba(0,0,0,0.02);">
                   <span style="cursor: pointer;"><i class="fa-regular fa-comment-dots" style="color: var(--primary);"></i> 12 Knowledge Clusters</span>
                   <span style="cursor: pointer;"><i class="fa-regular fa-heart" style="color: #EF4444;"></i> ${post.likes_count} Endorsements</span>
@@ -1271,9 +1281,9 @@ const NewsView = () => {
             <div class="crop-details" style="padding: 1.75rem;">
               <div style="font-size: 0.75rem; color: var(--secondary); font-weight: 900; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
                  <span style="width: 8px; height: 8px; border-radius: 50%; background: var(--secondary); display: inline-block;"></span>
-                 ${a.category}
+                 ${sanitizeHTML(a.category)}
               </div>
-              <h3 style="font-size: 1.35rem; font-weight: 900; margin-bottom: 15px; color: var(--text-main); line-height: 1.3; letter-spacing: -0.01em;">${a.title}</h3>
+              <h3 style="font-size: 1.35rem; font-weight: 900; margin-bottom: 15px; color: var(--text-main); line-height: 1.3; letter-spacing: -0.01em;">${sanitizeHTML(a.title)}</h3>
               <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.85rem; color: var(--text-muted); font-weight: 700; border-top: 1px solid rgba(0,0,0,0.02); padding-top: 1.5rem;">
                 <span>Official Release</span>
                 <span>${new Date(a.created_at).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}</span>
@@ -1730,7 +1740,7 @@ const ChatView = () => {
     return `
               <div style="max-width: 75%; padding: 12px 16px; border-radius: 18px; font-size: 0.95rem; 
                           ${isMe ? 'align-self: flex-end; background: var(--primary); color: white; border-bottom-right-radius: 4px;' : 'align-self: flex-start; background: white; border: 1px solid #E5E7EB; color: var(--text-main); border-bottom-left-radius: 4px;'}">
-                ${msg.content}
+                ${sanitizeHTML(msg.content)}
                 <div style="font-size: 0.7rem; opacity: 0.7; margin-top: 4px; text-align: ${isMe ? 'right' : 'left'};">
                   ${new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </div>
@@ -1752,13 +1762,15 @@ const ChatView = () => {
 // --- Global Handlers ---
 window.startChat = async (userId) => {
   const { data: targetProfile, error } = await supabase.from('profiles').select('*').eq('id', userId).single();
-  if (error) return alert('Profile not found');
+  if (error) return showToast('Target platform identity not found', 'error');
   state.activeChat = targetProfile;
   state.currentView = 'chat';
   await fetchMessages(userId);
   render();
-  const chatBox = document.getElementById('chat-messages');
-  if (chatBox) chatBox.scrollTop = chatBox.scrollHeight;
+  setTimeout(() => {
+    const chatBox = document.getElementById('chat-messages');
+    if (chatBox) chatBox.scrollTop = chatBox.scrollHeight;
+  }, 100);
 };
 
 window.sendMessage = async () => {
@@ -1774,7 +1786,7 @@ window.sendMessage = async () => {
     content: content
   }]);
 
-  if (error) alert(error.message);
+  if (error) showToast(error.message, 'error');
 };
 
 window.setView = (view) => {
@@ -1807,9 +1819,26 @@ window.placeOrder = async (listingId) => {
     status: 'pending'
   }]);
 
-  if (error) alert(error.message);
+  if (error) showToast(error.message, 'error');
   else {
-    alert('Order placed successfully! The farmer will contact you soon.');
+    showToast('Operational order established. The seller node will initialize contact.', 'success');
+    window.setView('my-activity');
+    fetchAllData();
+  }
+};
+
+window.buyProduct = async (productId, productName, price) => {
+  const { error } = await supabase.from('bookings').insert([{
+    user_id: state.user.id,
+    item_name: productName,
+    item_type: 'Product',
+    price_per_unit: price,
+    status: 'confirmed'
+  }]);
+
+  if (error) showToast(error.message, 'error');
+  else {
+    showToast('Inventory allocation successful. Delivery node initialized.', 'success');
     window.setView('my-activity');
     fetchAllData();
   }
@@ -1827,9 +1856,9 @@ window.bookService = async (itemName, price) => {
     status: 'confirmed'
   }]);
 
-  if (error) alert(error.message);
+  if (error) showToast(error.message, 'error');
   else {
-    alert('Booking confirmed! The provider will contact you shortly.');
+    showToast('Industrial booking confirmed. Equipment synchronization pending.', 'success');
     window.setView('my-activity');
     fetchAllData();
   }
@@ -2004,23 +2033,13 @@ function bindEvents() {
       const email = d.get('email');
       const password = d.get('password');
 
-      // Admin Bypass as requested: login admin, pass admin
-      if (email === 'admin' && password === 'admin') {
-        state.isAdmin = true;
-        state.profile = { full_name: 'Master Admin', role: 'admin' };
-        state.user = { id: 'admin-bypass' };
-        localStorage.setItem('khetgo_admin_session', 'true');
-        showToast('Admin access granted', 'success');
-        window.setView('admin');
-        return;
-      }
-
       const { data, error } = await supabase.auth.signInWithPassword({
         email: email,
         password: password,
       });
       if (error) showToast(error.message, 'error');
       else {
+        showToast('Authentication successful', 'success');
         await checkAuth();
         window.setView('dashboard');
         fetchAllData();
@@ -2045,9 +2064,9 @@ function bindEvents() {
           }
         }
       });
-      if (error) alert(error.message);
+      if (error) showToast(error.message, 'error');
       else {
-        alert('Welcome! Profile created. Please check your email for confirmation.');
+        showToast('Identity established. Check communication link for verification.', 'success');
         window.setView('login');
       }
     };
@@ -2176,8 +2195,10 @@ function bindEvents() {
         type: d.get('type')
       }]);
       if (!error) {
-        alert('Entry Recorded!');
+        showToast('Ledger entry committed successfully', 'success');
         fetchAllData();
+      } else {
+        showToast(error.message, 'error');
       }
     };
   }

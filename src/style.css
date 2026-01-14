@@ -13,7 +13,28 @@
   --sidebar-width: 280px;
   --transition: all 0.4s cubic-bezier(0.165, 0.84, 0.44, 1);
   --radius: 24px;
-  --glass: blur(10px) saturate(180%);
+  --glass: blur(16px) saturate(180%);
+  --glass-border: rgba(255, 255, 255, 0.1);
+  --glass-hover: rgba(255, 255, 255, 0.2);
+}
+
+/* Premium Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--background);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--primary-light);
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--secondary);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -46,13 +67,33 @@ body {
   overflow-x: hidden;
 }
 
-h1,
-h2,
-h3,
-.brand {
-  font-family: 'Outfit', sans-serif;
-  font-weight: 800;
-  letter-spacing: -0.02em;
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--secondary) !important;
+  box-shadow: 0 0 0 4px rgba(64, 145, 108, 0.1) !important;
+  outline: none;
+}
+
+@keyframes pulse-verified {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(149, 213, 178, 0.4);
+  }
+
+  70% {
+    transform: scale(1.05);
+    box-shadow: 0 0 0 10px rgba(149, 213, 178, 0);
+  }
+
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(149, 213, 178, 0);
+  }
+}
+
+.verified-badge i {
+  animation: pulse-verified 2s infinite;
 }
 
 #app {
