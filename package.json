@@ -1,8 +1,15 @@
 {
-  "name": "untitled-folder",
+  "name": "khetgo",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
+  "description": "The Digital Pulse of Indian Farming - Complete agricultural ecosystem",
+  "author": "Aryan Yadav <aryanyadav@example.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Coderaryanyadav/KhetGo"
+  },
   "scripts": {
     "dev": "vite",
     "build": "vite build",

@@ -35,7 +35,9 @@ let state = {
   messages: [],
   language: 'en', // 'en', 'hi', 'mr'
   activeChat: null,
-  isLoading: false
+  isLoading: false,
+  weather: null,
+  weatherLoading: false
 };
 
 const translations = {
@@ -89,10 +91,58 @@ async function fetchMessages(otherUserId) {
 
 async function getGeoLocation() {
   if (navigator.geolocation) {
-    navigator.geolocation.getCurrentPosition((pos) => {
+    navigator.geolocation.getCurrentPosition(async (pos) => {
       state.location = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+      await fetchWeather(pos.coords.latitude, pos.coords.longitude);
       render();
     });
+  } else {
+    // Fallback to default location if geolocation not available
+    const defaultLat = import.meta.env.VITE_DEFAULT_LAT || 21.1458;
+    const defaultLng = import.meta.env.VITE_DEFAULT_LNG || 79.0882;
+    await fetchWeather(defaultLat, defaultLng);
+  }
+}
+
+async function fetchWeather(lat, lng) {
+  const apiKey = import.meta.env.VITE_OPENWEATHER_API_KEY;
+  if (!apiKey) {
+    console.warn('OpenWeather API key not configured');
+    state.weather = null;
+    return;
+  }
+
+  state.weatherLoading = true;
+  try {
+    const response = await fetch(
+      `https://api.openweathermap.org/data/2.5/forecast?lat=${lat}&lon=${lng}&units=metric&appid=${apiKey}`
+    );
+    const data = await response.json();
+
+    // Process 7-day forecast (OpenWeather gives 5-day/3-hour forecast)
+    const dailyForecast = {};
+    data.list.forEach(item => {
+      const date = new Date(item.dt * 1000);
+      const day = date.toLocaleDateString('en-US', { weekday: 'short' });
+      if (!dailyForecast[day]) {
+        dailyForecast[day] = {
+          temp: Math.round(item.main.temp),
+          icon: item.weather[0].icon,
+          description: item.weather[0].description
+        };
+      }
+    });
+
+    state.weather = {
+      current: data.list[0],
+      daily: Object.entries(dailyForecast).slice(0, 7).map(([day, data]) => ({ day, ...data })),
+      city: data.city.name
+    };
+  } catch (error) {
+    console.error('Weather fetch error:', error);
+    state.weather = null;
+  } finally {
+    state.weatherLoading = false;
   }
 }
 
@@ -303,17 +353,32 @@ const DashboardView = () => `
             `).join('')}
           </div>
         <div class="glass-card" style="margin-top: 2rem;">
-          <h2 style="font-size: 1.25rem; margin-bottom: 1rem;">Local Weather</h2>
-          <div style="display: flex; gap: 1rem; overflow-x: auto; padding-bottom: 10px;">
-            ${['Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun', 'Mon'].map((day, i) => `
-              <div style="text-align: center; min-width: 60px; padding: 10px; background: #f9f9f9; border-radius: 12px;">
-                <div style="font-size: 0.8rem; color: grey;">${day}</div>
-                <i class="fa-solid fa-${i % 3 === 0 ? 'sun' : i % 2 === 0 ? 'cloud-sun' : 'cloud-showers-heavy'}" style="margin: 8px 0; color: var(--primary);"></i>
-                <div style="font-weight: 700; font-size: 0.9rem;">${24 + i}°</div>
-              </div>
-            `).join('')}
-          </div>
-          <p style="font-size: 0.75rem; color: #059669; margin-top: 10px;"><i class="fa-solid fa-circle-info"></i> Good conditions for harvest.</p>
+          <h2 style="font-size: 1.25rem; margin-bottom: 1rem;">
+            ${state.weather?.city ? `Weather in ${state.weather.city}` : 'Local Weather'}
+          </h2>
+          ${state.weatherLoading ? `
+            <div style="text-align: center; padding: 2rem; color: grey;">
+              <i class="fa-solid fa-spinner fa-spin"></i> Loading weather...
+            </div>
+          ` : state.weather ? `
+            <div style="display: flex; gap: 1rem; overflow-x: auto; padding-bottom: 10px;">
+              ${state.weather.daily.map(day => `
+                <div style="text-align: center; min-width: 60px; padding: 10px; background: #f9f9f9; border-radius: 12px;">
+                  <div style="font-size: 0.8rem; color: grey;">${day.day}</div>
+                  <img src="https://openweathermap.org/img/wn/${day.icon}.png" style="width: 40px; height: 40px; margin: 4px 0;" alt="${day.description}">
+                  <div style="font-weight: 700; font-size: 0.9rem;">${day.temp}°C</div>
+                </div>
+              `).join('')}
+            </div>
+            <p style="font-size: 0.75rem; color: #059669; margin-top: 10px;">
+              <i class="fa-solid fa-circle-info"></i> ${state.weather.current.weather[0].description}
+            </p>
+          ` : `
+            <div style="text-align: center; padding: 2rem; color: grey; font-size: 0.85rem;">
+              <i class="fa-solid fa-cloud-slash"></i><br>
+              Weather data unavailable. Add VITE_OPENWEATHER_API_KEY to enable.
+            </div>
+          `}
         </div>
 
         <div class="glass-card" style="margin-top: 2rem;">
@@ -1107,26 +1172,84 @@ window.setLanguage = (lang) => {
   render();
 };
 
-window.askAdvisor = () => {
+window.askAdvisor = async () => {
   const query = document.getElementById('advisor-query').value.trim();
   if (!query) return;
   const resultDiv = document.getElementById('advisor-result');
-  resultDiv.innerHTML = '<div class="glass-card">Thinking... <i class="fa-solid fa-spinner fa-spin"></i></div>';
+  resultDiv.innerHTML = '<div class="glass-card">Consulting AI Expert... <i class="fa-solid fa-spinner fa-spin"></i></div>';
 
-  setTimeout(() => {
+  try {
+    const apiKey = import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.VITE_HUGGINGFACE_API_KEY;
+
+    if (!apiKey) {
+      throw new Error('No AI API key configured. Please add VITE_GEMINI_API_KEY to your .env file.');
+    }
+
+    let advice = '';
+
+    // Try Google Gemini first
+    if (import.meta.env.VITE_GEMINI_API_KEY) {
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${import.meta.env.VITE_GEMINI_API_KEY}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{
+            parts: [{
+              text: `You are an expert agricultural advisor in India. A farmer asks: "${query}". Provide specific, actionable advice in 3-4 bullet points. Focus on practical solutions for Indian farming conditions.`
+            }]
+          }]
+        })
+      });
+
+      const data = await response.json();
+      advice = data.candidates?.[0]?.content?.parts?.[0]?.text || 'Unable to generate advice at this time.';
+    }
+    // Fallback to HuggingFace
+    else if (import.meta.env.VITE_HUGGINGFACE_API_KEY) {
+      const response = await fetch('https://api-inference.huggingface.co/models/facebook/blenderbot-400M-distill', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${import.meta.env.VITE_HUGGINGFACE_API_KEY}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          inputs: `As an agricultural expert, provide advice for: ${query}`
+        })
+      });
+
+      const data = await response.json();
+      advice = data.generated_text || data[0]?.generated_text || 'Unable to generate advice.';
+    }
+
     resultDiv.innerHTML = `
       <div class="glass-card fade-in" style="border-left: 5px solid var(--primary);">
-        <h3 style="margin-bottom: 1rem;"><i class="fa-solid fa-notes-medical"></i> Advisor Recommendation</h3>
-        <p style="line-height:1.6;">Based on your query "<strong>${query}</strong>", here is my advice:</p>
-        <ul style="margin: 1rem 0; padding-left: 1.5rem;">
-          <li>Maintain soil moisture between 60-70%.</li>
-          <li>Apply Nitrogen-based fertilizer if yellowing persists.</li>
-          <li>Check for pests under the leaves during early morning.</li>
-        </ul>
-        <div style="font-size: 0.8rem; color: grey; font-style: italic;">Disclaimer: This is an automated suggestion. Consult a local official for critical issues.</div>
+        <h3 style="margin-bottom: 1rem;"><i class="fa-solid fa-robot"></i> AI Expert Recommendation</h3>
+        <p style="line-height:1.6;"><strong>Your Query:</strong> "${query}"</p>
+        <div style="background: #F0FDF4; padding: 1.5rem; border-radius: 12px; margin: 1rem 0; line-height: 1.8;">
+          ${advice.replace(/\n/g, '<br>')}
+        </div>
+        <div style="font-size: 0.75rem; color: grey; font-style: italic; margin-top: 1rem;">
+          ⚠️ Powered by AI. Always consult local agricultural experts for critical decisions.
+        </div>
       </div>
     `;
-  }, 1500);
+  } catch (error) {
+    console.error('AI Advisor Error:', error);
+    resultDiv.innerHTML = `
+      <div class="glass-card" style="border-left: 5px solid #EF4444;">
+        <h3 style="color: #EF4444;">⚠️ Connection Issue</h3>
+        <p style="line-height:1.6;">
+          ${error.message.includes('API key')
+        ? 'AI service not configured. Please add your API key to environment variables.'
+        : 'Unable to reach AI service. Please check your internet connection and try again.'}
+        </p>
+        <details style="margin-top: 1rem; font-size: 0.85rem; color: grey;">
+          <summary style="cursor: pointer;">Technical Details</summary>
+          <pre style="margin-top: 0.5rem; padding: 1rem; background: #f9f9f9; border-radius: 8px; overflow-x: auto;">${error.message}</pre>
+        </details>
+      </div>
+    `;
+  }
 };
 
 window.exportKhataToPDF = () => {
@@ -1427,9 +1550,15 @@ function bindEvents() {
   const search = document.getElementById('global-search');
   if (search) {
     search.oninput = (e) => {
+      const cursorPosition = e.target.selectionStart;
       state.searchQuery = e.target.value;
       render();
-      document.getElementById('global-search').focus();
+      // Re-focus and restore cursor position after render
+      const searchAfterRender = document.getElementById('global-search');
+      if (searchAfterRender && document.activeElement === document.body) {
+        searchAfterRender.focus();
+        searchAfterRender.setSelectionRange(cursorPosition, cursorPosition);
+      }
     };
   }
 

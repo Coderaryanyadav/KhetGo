@@ -1,21 +1,153 @@
 {
-    "name": "KhetGo: Direct Farm to Market",
+    "name": "KhetGo: The Digital Pulse of Indian Farming",
     "short_name": "KhetGo",
-    "description": "Connecting farmers directly with buyers and agri-services.",
+    "description": "Complete agricultural ecosystem connecting farmers with buyers, AI advisor, digital khata, and farming tutorials",
     "start_url": "/",
+    "scope": "/",
     "display": "standalone",
+    "orientation": "portrait-primary",
     "background_color": "#F8FAF9",
     "theme_color": "#1B4332",
+    "categories": [
+        "agriculture",
+        "marketplace",
+        "education",
+        "finance",
+        "productivity"
+    ],
+    "lang": "en-IN",
+    "dir": "ltr",
     "icons": [
+        {
+            "src": "https://ui-avatars.com/api/?name=K&background=1B4332&color=fff&size=72",
+            "sizes": "72x72",
+            "type": "image/png",
+            "purpose": "any"
+        },
+        {
+            "src": "https://ui-avatars.com/api/?name=K&background=1B4332&color=fff&size=96",
+            "sizes": "96x96",
+            "type": "image/png",
+            "purpose": "any"
+        },
+        {
+            "src": "https://ui-avatars.com/api/?name=K&background=1B4332&color=fff&size=128",
+            "sizes": "128x128",
+            "type": "image/png",
+            "purpose": "any"
+        },
+        {
+            "src": "https://ui-avatars.com/api/?name=K&background=1B4332&color=fff&size=144",
+            "sizes": "144x144",
+            "type": "image/png",
+            "purpose": "any"
+        },
+        {
+            "src": "https://ui-avatars.com/api/?name=K&background=1B4332&color=fff&size=152",
+            "sizes": "152x152",
+            "type": "image/png",
+            "purpose": "any"
+        },
         {
             "src": "https://ui-avatars.com/api/?name=K&background=1B4332&color=fff&size=192",
             "sizes": "192x192",
-            "type": "image/png"
+            "type": "image/png",
+            "purpose": "any maskable"
+        },
+        {
+            "src": "https://ui-avatars.com/api/?name=K&background=1B4332&color=fff&size=384",
+            "sizes": "384x384",
+            "type": "image/png",
+            "purpose": "any"
         },
         {
             "src": "https://ui-avatars.com/api/?name=K&background=1B4332&color=fff&size=512",
             "sizes": "512x512",
-            "type": "image/png"
+            "type": "image/png",
+            "purpose": "any maskable"
         }
-    ]
+    ],
+    "shortcuts": [
+        {
+            "name": "Marketplace",
+            "short_name": "Market",
+            "description": "Browse and post agricultural products",
+            "url": "/#marketplace",
+            "icons": [
+                {
+                    "src": "https://ui-avatars.com/api/?name=M&background=2D6A4F&color=fff&size=96",
+                    "sizes": "96x96"
+                }
+            ]
+        },
+        {
+            "name": "AI Advisor",
+            "short_name": "AI Help",
+            "description": "Get instant farming advice",
+            "url": "/#ai-advisor",
+            "icons": [
+                {
+                    "src": "https://ui-avatars.com/api/?name=AI&background=40916C&color=fff&size=96",
+                    "sizes": "96x96"
+                }
+            ]
+        },
+        {
+            "name": "Digital Khata",
+            "short_name": "Khata",
+            "description": "Manage your farm finances",
+            "url": "/#khata",
+            "icons": [
+                {
+                    "src": "https://ui-avatars.com/api/?name=K&background=52B788&color=fff&size=96",
+                    "sizes": "96x96"
+                }
+            ]
+        },
+        {
+            "name": "Academy",
+            "short_name": "Learn",
+            "description": "Watch farming tutorials",
+            "url": "/#academy",
+            "icons": [
+                {
+                    "src": "https://ui-avatars.com/api/?name=A&background=74C69D&color=fff&size=96",
+                    "sizes": "96x96"
+                }
+            ]
+        }
+    ],
+    "share_target": {
+        "action": "/share",
+        "method": "POST",
+        "enctype": "multipart/form-data",
+        "params": {
+            "title": "title",
+            "text": "text",
+            "url": "url",
+            "files": [
+                {
+                    "name": "image",
+                    "accept": [
+                        "image/*"
+                    ]
+                }
+            ]
+        }
+    },
+    "screenshots": [
+        {
+            "src": "/khetgo_dashboard_mockup.png",
+            "sizes": "1280x720",
+            "type": "image/png",
+            "label": "KhetGo Dashboard"
+        },
+        {
+            "src": "/khetgo_hero_promo.png",
+            "sizes": "1280x720",
+            "type": "image/png",
+            "label": "KhetGo Marketplace"
+        }
+    ],
+    "prefer_related_applications": false
 }
