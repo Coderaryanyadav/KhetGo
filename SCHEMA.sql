@@ -13,6 +13,7 @@ create table if not exists public.profiles (
   district text,
   pincode text,
   is_verified boolean default false,
+  phone text,
   lat numeric,
   lng numeric,
   created_at timestamp with time zone default timezone('utc'::text, now())
@@ -190,10 +191,13 @@ drop policy if exists "Select Prof" on public.profiles;
 create policy "Select Prof" on public.profiles for select using (true);
 
 drop policy if exists "Update Prof" on public.profiles;
-create policy "Update Prof" on public.profiles for update using (auth.uid() = id);
+create policy "Update Prof" on public.profiles for update using (auth.uid() = id or (select role from profiles where id = auth.uid()) = 'admin');
 
 drop policy if exists "Select Mandi" on public.mandi_prices;
 create policy "Select Mandi" on public.mandi_prices for select using (true);
+
+drop policy if exists "All Mandi Admin" on public.mandi_prices;
+create policy "All Mandi Admin" on public.mandi_prices for all using ((select role from profiles where id = auth.uid()) = 'admin');
 
 drop policy if exists "Select List" on public.listings;
 create policy "Select List" on public.listings for select using (true);
@@ -201,41 +205,62 @@ create policy "Select List" on public.listings for select using (true);
 drop policy if exists "Insert List" on public.listings;
 create policy "Insert List" on public.listings for insert with check (auth.role() = 'authenticated');
 
+drop policy if exists "Update List Admin" on public.listings;
+create policy "Update List Admin" on public.listings for update using (auth.uid() = owner_id or (select role from profiles where id = auth.uid()) = 'admin');
+
 drop policy if exists "Delete List" on public.listings;
-create policy "Delete List" on public.listings for delete using (auth.uid() = owner_id);
+create policy "Delete List" on public.listings for delete using (auth.uid() = owner_id or (select role from profiles where id = auth.uid()) = 'admin');
 
 drop policy if exists "Select Service" on public.agri_services;
 create policy "Select Service" on public.agri_services for select using (true);
 
+drop policy if exists "All Service Admin" on public.agri_services;
+create policy "All Service Admin" on public.agri_services for all using ((select role from profiles where id = auth.uid()) = 'admin');
+
 drop policy if exists "Select Store" on public.store_products;
 create policy "Select Store" on public.store_products for select using (true);
+
+drop policy if exists "All Store Admin" on public.store_products;
+create policy "All Store Admin" on public.store_products for all using ((select role from profiles where id = auth.uid()) = 'admin');
 
 drop policy if exists "Select Forum" on public.forum_posts;
 create policy "Select Forum" on public.forum_posts for select using (true);
 
+drop policy if exists "Delete Forum Admin" on public.forum_posts;
+create policy "Delete Forum Admin" on public.forum_posts for delete using (auth.uid() = author_id or (select role from profiles where id = auth.uid()) = 'admin');
+
 drop policy if exists "Select News" on public.news_articles;
 create policy "Select News" on public.news_articles for select using (true);
 
+drop policy if exists "All News Admin" on public.news_articles;
+create policy "All News Admin" on public.news_articles for all using ((select role from profiles where id = auth.uid()) = 'admin');
+
 drop policy if exists "Select Book" on public.bookings;
-create policy "Select Book" on public.bookings for select using (auth.uid() = user_id);
+create policy "Select Book" on public.bookings for select using (auth.uid() = user_id or (select role from profiles where id = auth.uid()) = 'admin');
+
+drop policy if exists "Update Book Admin" on public.bookings;
+create policy "Update Book Admin" on public.bookings for update using ((select role from profiles where id = auth.uid()) = 'admin');
 
 drop policy if exists "Insert Book" on public.bookings;
 create policy "Insert Book" on public.bookings for insert with check (auth.role() = 'authenticated');
 
 drop policy if exists "Select Msg" on public.messages;
-create policy "Select Msg" on public.messages for select using (auth.uid() = sender_id or auth.uid() = receiver_id);
+create policy "Select Msg" on public.messages for select using (auth.uid() = sender_id or auth.uid() = receiver_id or (select role from profiles where id = auth.uid()) = 'admin');
 
 drop policy if exists "Insert Msg" on public.messages;
 create policy "Insert Msg" on public.messages for insert with check (auth.uid() = sender_id);
 
 drop policy if exists "Select Ledger" on public.ledger_entries;
-create policy "Select Ledger" on public.ledger_entries for select using (auth.uid() = user_id);
+create policy "Select Ledger" on public.ledger_entries for select using (auth.uid() = user_id or (select role from profiles where id = auth.uid()) = 'admin');
 
 drop policy if exists "Insert Ledger" on public.ledger_entries;
 create policy "Insert Ledger" on public.ledger_entries for insert with check (auth.uid() = user_id);
 
 drop policy if exists "Select Acad" on public.academy_content;
 create policy "Select Acad" on public.academy_content for select using (true);
+
+drop policy if exists "All Acad Admin" on public.academy_content;
+create policy "All Acad Admin" on public.academy_content for all using ((select role from profiles where id = auth.uid()) = 'admin');
 
 -- 14. SEED DATA (Idempotent)
 insert into public.mandi_prices (crop, price, change_pct, trend) values 

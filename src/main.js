@@ -3,8 +3,29 @@ import './style.css';
 import { Chart, registerables } from 'chart.js';
 import { jsPDF } from 'jspdf';
 import 'jspdf-autotable';
+import {
+  sanitizeHTML,
+  escapeHTML,
+  validateEmail,
+  validatePrice,
+  validateImageFile,
+  debounce,
+  showToast,
+  handleError,
+  retryWithBackoff,
+  isAuthenticated,
+  formatCurrency,
+  formatDate
+} from './utils.js';
 
 Chart.register(...registerables);
+
+const CONSTANTS = {
+  DEFAULT_LAT: parseFloat(import.meta.env.VITE_DEFAULT_LAT) || 21.1458,
+  DEFAULT_LNG: parseFloat(import.meta.env.VITE_DEFAULT_LNG) || 79.0882,
+  MAX_IMAGE_SIZE: 5 * 1024 * 1024,
+  DEBOUNCE_DELAY: 300,
+};
 
 /**
  * KhetGo - High-Performance Agricultural Ecosystem
@@ -37,7 +58,14 @@ let state = {
   activeChat: null,
   isLoading: false,
   weather: null,
-  weatherLoading: false
+  weatherLoading: false,
+  isAdmin: false,
+  adminStats: {
+    totalUsers: 0,
+    totalListings: 0,
+    totalRevenue: 0
+  },
+  charts: {}
 };
 
 const translations = {
@@ -49,21 +77,44 @@ const translations = {
 const t = (key) => translations[state.language][key] || key;
 
 // --- Auth Handling ---
+// --- Auth Handling ---
 async function checkAuth() {
-  const { data: { user } } = await supabase.auth.getUser();
-  state.user = user;
-  if (user) {
-    const { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single();
-    state.profile = profile;
-    subscribeToMessages();
-    requestNotificationPermission();
-    getGeoLocation();
+  try {
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError) throw authError;
+
+    state.user = user;
+    if (user) {
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+
+      if (profileError && profileError.code !== 'PGRST116') throw profileError;
+      state.profile = profile;
+      state.isAdmin = profile?.role === 'admin';
+
+      subscribeToMessages();
+      requestNotificationPermission();
+      getGeoLocation();
+    } else {
+      // Check for demo admin session in localStorage
+      if (localStorage.getItem('khetgo_admin_session') === 'true') {
+        state.isAdmin = true;
+        state.profile = { full_name: 'Master Admin', role: 'admin' };
+        state.user = { id: 'admin-bypass' };
+      }
+    }
+  } catch (error) {
+    console.warn('Auth check failed:', error.message);
+  } finally {
+    render();
   }
-  render();
 }
 
 function subscribeToMessages() {
-  if (!state.user) return;
+  if (!isAuthenticated(state.user)) return;
   supabase
     .channel('public:messages')
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, payload => {
@@ -77,31 +128,42 @@ function subscribeToMessages() {
 }
 
 async function fetchMessages(otherUserId) {
-  const { data, error } = await supabase
-    .from('messages')
-    .select('*')
-    .or(`and(sender_id.eq.${state.user.id},receiver_id.eq.${otherUserId}),and(sender_id.eq.${otherUserId},receiver_id.eq.${state.user.id})`)
-    .order('created_at', { ascending: true });
+  if (!isAuthenticated(state.user)) return;
 
-  if (!error) {
-    state.messages = data;
+  try {
+    const { data, error } = await supabase
+      .from('messages')
+      .select('*')
+      .or(`and(sender_id.eq.${state.user.id},receiver_id.eq.${otherUserId}),and(sender_id.eq.${otherUserId},receiver_id.eq.${state.user.id})`)
+      .order('created_at', { ascending: true });
+
+    if (error) throw error;
+    state.messages = data || [];
     render();
+  } catch (error) {
+    handleError(error, 'Fetch Messages');
   }
 }
 
 async function getGeoLocation() {
-  if (navigator.geolocation) {
-    navigator.geolocation.getCurrentPosition(async (pos) => {
+  if (!navigator.geolocation) {
+    console.warn('Geolocation not supported');
+    await fetchWeather(CONSTANTS.DEFAULT_LAT, CONSTANTS.DEFAULT_LNG);
+    return;
+  }
+
+  navigator.geolocation.getCurrentPosition(
+    async (pos) => {
       state.location = { lat: pos.coords.latitude, lng: pos.coords.longitude };
       await fetchWeather(pos.coords.latitude, pos.coords.longitude);
       render();
-    });
-  } else {
-    // Fallback to default location if geolocation not available
-    const defaultLat = import.meta.env.VITE_DEFAULT_LAT || 21.1458;
-    const defaultLng = import.meta.env.VITE_DEFAULT_LNG || 79.0882;
-    await fetchWeather(defaultLat, defaultLng);
-  }
+    },
+    async (error) => {
+      console.warn('Geolocation error:', error.message);
+      await fetchWeather(CONSTANTS.DEFAULT_LAT, CONSTANTS.DEFAULT_LNG);
+    },
+    { timeout: 10000 }
+  );
 }
 
 async function fetchWeather(lat, lng) {
@@ -117,9 +179,11 @@ async function fetchWeather(lat, lng) {
     const response = await fetch(
       `https://api.openweathermap.org/data/2.5/forecast?lat=${lat}&lon=${lng}&units=metric&appid=${apiKey}`
     );
-    const data = await response.json();
+    if (!response.ok) throw new Error('Weather service unavailable');
 
-    // Process 7-day forecast (OpenWeather gives 5-day/3-hour forecast)
+    const data = await response.json();
+    if (!data || !data.list) throw new Error('Invalid weather data');
+
     const dailyForecast = {};
     data.list.forEach(item => {
       const date = new Date(item.dt * 1000);
@@ -139,10 +203,11 @@ async function fetchWeather(lat, lng) {
       city: data.city.name
     };
   } catch (error) {
-    console.error('Weather fetch error:', error);
+    console.error('Weather error:', error);
     state.weather = null;
   } finally {
     state.weatherLoading = false;
+    render();
   }
 }
 
@@ -156,7 +221,7 @@ function calculateDistance(lat1, lon1, lat2, lon2) {
     Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
     Math.sin(dLon / 2) * Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return (R * c).toFixed(1);
+  return parseFloat((R * c).toFixed(1));
 }
 
 // Notification Helper
@@ -175,36 +240,38 @@ async function requestNotificationPermission() {
 
 // --- Data Fetching ---
 async function fetchAllData() {
+  if (!isAuthenticated(state.user)) return;
+
   state.isLoading = true;
   render();
 
   try {
     const fetchers = [
       supabase.from('mandi_prices').select('*').order('updated_at', { ascending: false }),
-      supabase.from('listings').select('*').order('created_at', { ascending: false }),
-      supabase.from('bookings').select('*').order('booking_date', { ascending: false }),
+      supabase.from('listings').select('*, profiles(full_name, phone, district)').order('created_at', { ascending: false }),
+      supabase.from('bookings').select('*').eq('user_id', state.user.id).order('booking_date', { ascending: false }),
       supabase.from('store_products').select('*').order('created_at', { ascending: false }),
       supabase.from('agri_services').select('*').order('created_at', { ascending: false }),
       supabase.from('news_articles').select('*').order('created_at', { ascending: false }),
       supabase.from('forum_posts').select('*').order('created_at', { ascending: false }),
-      supabase.from('ledger_entries').select('*').order('created_at', { ascending: false }),
+      supabase.from('ledger_entries').select('*').eq('user_id', state.user.id).order('created_at', { ascending: false }),
       supabase.from('academy_content').select('*').order('created_at', { ascending: false })
     ];
 
-    const results = await Promise.all(fetchers);
+    const results = await Promise.allSettled(fetchers);
 
-    state.mandiPrices = results[0].data || [];
-    state.cropListings = results[1].data || [];
-    state.myBookings = results[2].data || [];
-    state.storeProducts = results[3].data || [];
-    state.services = results[4].data || [];
-    state.news = results[5].data || [];
-    state.forumPosts = results[6].data || [];
-    state.ledgerEntries = results[7].data || [];
-    state.academyContent = results[8].data || [];
+    state.mandiPrices = results[0].status === 'fulfilled' ? (results[0].value.data || []) : [];
+    state.cropListings = results[1].status === 'fulfilled' ? (results[1].value.data || []) : [];
+    state.myBookings = results[2].status === 'fulfilled' ? (results[2].value.data || []) : [];
+    state.storeProducts = results[3].status === 'fulfilled' ? (results[3].value.data || []) : [];
+    state.services = results[4].status === 'fulfilled' ? (results[4].value.data || []) : [];
+    state.news = results[5].status === 'fulfilled' ? (results[5].value.data || []) : [];
+    state.forumPosts = results[6].status === 'fulfilled' ? (results[6].value.data || []) : [];
+    state.ledgerEntries = results[7].status === 'fulfilled' ? (results[7].value.data || []) : [];
+    state.academyContent = results[8].status === 'fulfilled' ? (results[8].value.data || []) : [];
 
   } catch (err) {
-    console.error('Real Data Sync Error:', err.message);
+    handleError(err, 'Sync Data');
   } finally {
     state.isLoading = false;
     render();
@@ -215,18 +282,18 @@ async function fetchAllData() {
 const Header = (title) => `
   <header>
     <div class="header-left">
-      <h1>${title}</h1>
+      <h1>${sanitizeHTML(title)}</h1>
     </div>
     <div class="header-right">
       <div class="search-bar">
         <i class="fa-solid fa-magnifying-glass"></i>
-        <input type="text" id="global-search" placeholder="Search crops, locations..." value="${state.searchQuery}">
+        <input type="text" id="global-search" placeholder="Search crops, locations..." value="${escapeHTML(state.searchQuery)}">
       </div>
       <div class="user-profile">
         <div class="verified-badge">
           <i class="fa-solid fa-circle-check"></i> ${state.profile?.is_verified ? 'Verified' : 'Member'}
         </div>
-        <img class="profile-img" src="https://ui-avatars.com/api/?name=${state.profile?.full_name || 'User'}&background=1B4332&color=fff&rounded=true" alt="User">
+        <img class="profile-img" src="https://ui-avatars.com/api/?name=${encodeURIComponent(state.profile?.full_name || 'User')}&background=1B4332&color=fff&rounded=true" alt="User">
       </div>
     </div>
   </header>
@@ -234,7 +301,7 @@ const Header = (title) => `
 
 const Sidebar = () => `
   <aside class="sidebar">
-    <div class="brand">
+    <div class="brand" onclick="window.setView('dashboard')" style="cursor:pointer">
       <i class="fa-solid fa-leaf"></i>
       <span>KhetGo</span>
     </div>
@@ -272,7 +339,7 @@ const Sidebar = () => `
         <span>${t('activity')}</span>
       </div>
     </nav>
-    <div style="padding: 1rem; border-top: 1px solid rgba(255,255,255,0.1);">
+    <div class="mobile-menu-footer" style="padding: 1rem; border-top: 1px solid rgba(255,255,255,0.1);">
        <select onchange="window.setLanguage(this.value)" style="width:100%; padding:8px; border-radius:8px; background:rgba(255,255,255,0.1); color:white; border:none; outline:none; font-size: 0.8rem;">
           <option value="en" ${state.language === 'en' ? 'selected' : ''}>English</option>
           <option value="hi" ${state.language === 'hi' ? 'selected' : ''}>हिन्दी</option>
@@ -281,14 +348,20 @@ const Sidebar = () => `
     </div>
     <div class="sidebar-footer" style="margin-top: auto; padding-top: 2rem; border-top: 1px solid rgba(255,255,255,0.1);">
       <div style="margin-bottom: 1.5rem;">
-        <div style="font-weight: 700; font-size: 0.95rem; color: var(--accent); cursor: pointer;" onclick="window.setView('profile')">${state.profile?.full_name || 'User'}</div>
-        <div style="font-size: 0.75rem; color: rgba(255,255,255,0.5); text-transform: uppercase; letter-spacing: 0.05em;">${state.profile?.role || 'Member'}</div>
+        <div style="font-weight: 700; font-size: 0.95rem; color: var(--accent); cursor: pointer;" onclick="window.setView('profile')">${sanitizeHTML(state.profile?.full_name || 'User')}</div>
+        <div style="font-size: 0.75rem; color: rgba(255,255,255,0.5); text-transform: uppercase; letter-spacing: 0.05em;">${sanitizeHTML(state.profile?.role || 'Member')}</div>
       </div>
       <div class="nav-link" style="color: #FF6B6B;" onclick="window.logout()">
         <i class="fa-solid fa-right-from-bracket"></i>
         <span>Logout</span>
       </div>
     </div>
+    ${state.isAdmin ? `
+    <div class="admin-badge" onclick="window.setView('admin')" style="margin: 1rem; padding: 1rem; background: rgba(0,0,0,0.2); border-radius: 12px; cursor: pointer; border: 1px solid var(--accent);">
+      <div style="font-size: 0.7rem; color: var(--accent); font-weight: 700; text-transform: uppercase;">Admin Mode</div>
+      <div style="font-size: 0.85rem; color: white;">Open Control Panel</div>
+    </div>
+    ` : ''}
   </aside>
 `;
 
@@ -302,7 +375,7 @@ const DashboardView = () => `
           <h2 style="font-size: 1.5rem; margin-bottom: 0.5rem;">Harvest Update</h2>
           <p style="opacity: 0.9; margin-bottom: 1.5rem;">
             ${state.mandiPrices[0]
-    ? `Market prices for <strong>${state.mandiPrices[0].crop}</strong> have changed by ${state.mandiPrices[0].change_pct} today.`
+    ? `Market prices for <strong>${sanitizeHTML(state.mandiPrices[0].crop)}</strong> have changed by ${sanitizeHTML(state.mandiPrices[0].change_pct)} today.`
     : 'Welcome back! Check the latest mandi rates below.'}
           </p>
           <button class="btn-primary" style="background: var(--accent); color: var(--primary);" onclick="window.setView('add-listing')">Post New Listing</button>
@@ -315,14 +388,14 @@ const DashboardView = () => `
         
         <div class="marketplace-grid">
           ${state.cropListings.slice(0, 3).map(crop => `
-            <div class="crop-card">
-              <img src="${crop.image_url || 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&q=80&w=400'}" class="crop-image">
+            <div class="crop-card" onclick="window.showListing('${crop.id}')">
+              <img src="${crop.image_url || 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&q=80&w=400'}" class="crop-image" alt="${sanitizeHTML(crop.name)}">
               <div class="crop-details">
-                <div class="crop-name">${crop.name}</div>
-                <div class="crop-location"><i class="fa-solid fa-location-dot"></i> ${crop.location || 'Local'}</div>
+                <div class="crop-name">${sanitizeHTML(crop.name)}</div>
+                <div class="crop-location"><i class="fa-solid fa-location-dot"></i> ${sanitizeHTML(crop.location_name || 'Local')}</div>
                 <div class="crop-footer">
-                  <span class="price">₹${crop.price}/${crop.unit}</span>
-                  <button class="btn-primary" onclick="window.showListing('${crop.id}')">Details</button>
+                  <span class="price">${formatCurrency(crop.price)}/${sanitizeHTML(crop.unit)}</span>
+                  <button class="btn-primary">Details</button>
                 </div>
               </div>
             </div>
@@ -334,24 +407,26 @@ const DashboardView = () => `
         <div class="glass-card">
           <h2 style="font-size: 1.25rem; margin-bottom: 1.5rem;">Live Mandi Prices</h2>
           <div class="mandi-list">
-            ${state.mandiPrices.map(item => `
+            ${state.mandiPrices.slice(0, 5).map(item => `
               <div class="mandi-item">
                 <div style="display:flex; align-items:center; gap:12px;">
                   <div style="background:#F0FDF4; padding:8px; border-radius:10px; color:var(--primary);"><i class="fa-solid fa-seedling"></i></div>
                   <div>
-                    <div style="font-weight:700; font-size:0.9rem;">${item.crop}</div>
-                    <div style="font-size:0.75rem; color:var(--text-muted);">${item.unit}</div>
+                    <div style="font-weight:700; font-size:0.9rem;">${sanitizeHTML(item.crop)}</div>
+                    <div style="font-size:0.75rem; color:var(--text-muted);">${sanitizeHTML(item.unit)}</div>
                   </div>
                 </div>
                 <div style="text-align:right;">
-                  <div class="price">${item.price}</div>
-                  <div class="trend ${item.trend}" style="font-size:0.8rem;">
-                    ${item.trend === 'up' ? '▲' : '▼'} ${item.change}
+                  <div class="price">${formatCurrency(item.price)}</div>
+                  <div class="trend ${sanitizeHTML(item.trend)}" style="font-size:0.8rem;">
+                    ${item.trend === 'up' ? '▲' : item.trend === 'down' ? '▼' : ''} ${sanitizeHTML(item.change_pct || '')}
                   </div>
                 </div>
               </div>
-            `).join('')}
+            `).join('') || '<p style="color: grey; text-align: center; padding: 1rem;">Mandi data coming soon...</p>'}
           </div>
+        </div>
+        
         <div class="glass-card" style="margin-top: 2rem;">
           <h2 style="font-size: 1.25rem; margin-bottom: 1rem;">
             ${state.weather?.city ? `Weather in ${state.weather.city}` : 'Local Weather'}
@@ -361,17 +436,17 @@ const DashboardView = () => `
               <i class="fa-solid fa-spinner fa-spin"></i> Loading weather...
             </div>
           ` : state.weather ? `
-            <div style="display: flex; gap: 1rem; overflow-x: auto; padding-bottom: 10px;">
+            <div style="display: flex; gap: 1rem; overflow-x: auto; padding-bottom: 10px; scrollbar-width: none;">
               ${state.weather.daily.map(day => `
-                <div style="text-align: center; min-width: 60px; padding: 10px; background: #f9f9f9; border-radius: 12px;">
-                  <div style="font-size: 0.8rem; color: grey;">${day.day}</div>
-                  <img src="https://openweathermap.org/img/wn/${day.icon}.png" style="width: 40px; height: 40px; margin: 4px 0;" alt="${day.description}">
+                <div style="text-align: center; min-width: 60px; padding: 10px; background: #f9f9f9; border-radius: 12px; flex-shrink: 0;">
+                  <div style="font-size: 0.8rem; color: grey;">${sanitizeHTML(day.day)}</div>
+                  <img src="https://openweathermap.org/img/wn/${day.icon}.png" style="width: 40px; height: 40px; margin: 4px 0;" alt="${sanitizeHTML(day.description)}">
                   <div style="font-weight: 700; font-size: 0.9rem;">${day.temp}°C</div>
                 </div>
               `).join('')}
             </div>
             <p style="font-size: 0.75rem; color: #059669; margin-top: 10px;">
-              <i class="fa-solid fa-circle-info"></i> ${state.weather.current.weather[0].description}
+              <i class="fa-solid fa-circle-info"></i> ${sanitizeHTML(state.weather.current.weather[0].description)}
             </p>
           ` : `
             <div style="text-align: center; padding: 2rem; color: grey; font-size: 0.85rem;">
@@ -429,7 +504,7 @@ const AgriStoreView = () => {
   return `
     <div class="fade-in">
       ${Header('Agri Store')}
-      <div style="display: flex; gap: 1rem; margin-bottom: 2rem; overflow-x: auto;">
+      <div style="display: flex; gap: 1rem; margin-bottom: 2rem; overflow-x: auto; scrollbar-width: none;">
         ${['All', 'Seeds', 'Fertilizer', 'Pesticides', 'Tools'].map(cat => `
           <button class="btn-primary" style="background: ${cat === 'All' ? 'var(--primary)' : 'white'}; color: ${cat === 'All' ? 'white' : 'var(--text-main)'}; border: 1px solid #eee; white-space: nowrap;">${cat}</button>
         `).join('')}
@@ -438,14 +513,14 @@ const AgriStoreView = () => {
       <div class="marketplace-grid">
         ${state.storeProducts.length > 0 ? state.storeProducts.map(p => `
           <div class="crop-card">
-            <img src="${p.image_url}" class="crop-image">
+            <img src="${p.image_url || 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&q=80&w=400'}" class="crop-image" alt="${sanitizeHTML(p.name)}">
             <div class="crop-details">
-              <div style="font-size: 0.75rem; color: var(--secondary); font-weight: 600; text-transform: uppercase;">${p.brand || 'Local'}</div>
-              <div class="crop-name" style="margin: 4px 0;">${p.name}</div>
-              <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem;">${p.unit || ''}</div>
+              <div style="font-size: 0.75rem; color: var(--secondary); font-weight: 600; text-transform: uppercase;">${sanitizeHTML(p.brand || 'Local')}</div>
+              <div class="crop-name" style="margin: 4px 0;">${sanitizeHTML(p.name)}</div>
+              <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem;">${sanitizeHTML(p.unit || '')}</div>
               <div class="crop-footer">
-                <span class="price">₹${p.price}</span>
-                <button class="btn-primary" onclick="alert('Item added to cart!')">Buy Now</button>
+                <span class="price">${formatCurrency(p.price)}</span>
+                <button class="btn-primary" onclick="showToast('Item added to cart!', 'success')">Buy Now</button>
               </div>
             </div>
           </div>
@@ -480,7 +555,7 @@ const SoilTestingView = () => `
               <label style="display:block; font-weight:600; margin-bottom:6px;">Sample Collection Date</label>
               <input type="date" style="width:100%; padding:14px; border-radius:12px; border:1px solid #E5E7EB;">
             </div>
-            <button class="btn-primary" type="button" onclick="alert('Sample collection agent will be assigned to your pincode.')">Schedule Collection</button>
+            <button class="btn-primary" type="button" onclick="showToast('Sample collection agent will be assigned to your pincode.', 'info')">Schedule Collection</button>
           </form>
         </div>
       </section>
@@ -512,11 +587,13 @@ const MandiMarketsView = () => `
           <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 1rem;">
             ${state.mandiPrices.map(item => `
               <div class="glass-card" style="padding: 1rem; border: 1px solid #eee;">
-                <div style="font-weight: 700;">${item.crop}</div>
-                <div class="price" style="font-size: 1.25rem; margin: 10px 0;">${item.price}</div>
-                <div class="trend ${item.trend}">${item.trend === 'up' ? '▲' : '▼'} ${item.change}</div>
+                <div style="font-weight: 700;">${sanitizeHTML(item.crop)}</div>
+                <div class="price" style="font-size: 1.25rem; margin: 10px 0;">${formatCurrency(item.price)}</div>
+                <div class="trend ${sanitizeHTML(item.trend)}">
+                  ${item.trend === 'up' ? '▲' : item.trend === 'down' ? '▼' : ''} ${sanitizeHTML(item.change_pct || '')}
+                </div>
               </div>
-            `).join('')}
+            `).join('') || '<p style="color: grey; padding: 1rem;">No market data available.</p>'}
           </div>
         </div>
       </section>
@@ -525,12 +602,15 @@ const MandiMarketsView = () => `
         <div class="glass-card">
           <h2 style="font-size: 1.25rem; margin-bottom: 1.5rem;">Market Updates</h2>
           <div style="display: flex; flex-direction: column; gap: 1rem;">
-            <div style="font-size: 0.9rem; padding: 10px; border-left: 4px solid var(--primary); background: #f9f9f9;">
-              New government MSP declared for Kharif crops.
-            </div>
-            <div style="font-size: 0.9rem; padding: 10px; border-left: 4px solid var(--secondary); background: #f9f9f9;">
-              Export duty reduced on Basmati Rice.
-            </div>
+            ${state.news.slice(0, 3).map(n => `
+              <div style="font-size: 0.9rem; padding: 10px; border-left: 4px solid var(--primary); background: #f9f9f9;">
+                ${sanitizeHTML(n.title)}
+              </div>
+            `).join('') || `
+              <div style="font-size: 0.9rem; padding: 10px; border-left: 4px solid var(--primary); background: #f9f9f9;">
+                Connecting to mandi network...
+              </div>
+            `}
           </div>
         </div>
       </aside>
@@ -575,13 +655,13 @@ const MarketplaceView = () => {
           </div>
 
           <div style="margin-bottom: 1.5rem;">
-            <label style="display:block; font-size:0.85rem; font-weight:600; margin-bottom: 8px;">Max Price: ₹${state.filters.maxPrice}</label>
-            <input type="range" id="price-range" min="0" max="10000" step="100" value="${state.filters.maxPrice}" style="width:100%; accent-color: var(--primary);">
+            <label style="display:block; font-size:0.85rem; font-weight:600; margin-bottom: 8px;">Max Price: ${formatCurrency(state.filters.maxPrice)}</label>
+            <input type="range" id="price-range" min="0" max="100000" step="500" value="${state.filters.maxPrice}" style="width:100%; accent-color: var(--primary);">
           </div>
 
           <div style="margin-bottom: 1.5rem;">
             <label style="display:block; font-size:0.85rem; font-weight:600; margin-bottom: 8px;">Region Pincode</label>
-            <input type="text" id="filter-pincode" placeholder="e.g. 4400" value="${state.filters.pincode}" 
+            <input type="text" id="filter-pincode" placeholder="e.g. 4400" value="${escapeHTML(state.filters.pincode)}" 
                    style="width:100%; padding:10px; border-radius:10px; border:1px solid #E5E7EB; outline:none;">
           </div>
           
@@ -597,18 +677,18 @@ const MarketplaceView = () => {
     const dist = state.location ? calculateDistance(state.location.lat, state.location.lng, crop.lat, crop.lng) : null;
     return `
               <div class="crop-card">
-                <img src="${crop.image_url || 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&q=80&w=400'}" class="crop-image">
+                <img src="${crop.image_url || 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&q=80&w=400'}" class="crop-image" alt="${sanitizeHTML(crop.name)}">
                 <div class="crop-details">
                   <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-                    <div class="crop-name">${crop.name}</div>
+                    <div class="crop-name">${sanitizeHTML(crop.name)}</div>
                     ${crop.is_verified ? '<i class="fa-solid fa-certificate" style="color:#2D6A4F;" title="Verified"></i>' : ''}
                   </div>
                   <div class="crop-location" style="display:flex; justify-content:space-between;">
-                    <span><i class="fa-solid fa-location-dot"></i> ${crop.location || 'Local'}</span>
+                    <span><i class="fa-solid fa-location-dot"></i> ${sanitizeHTML(crop.location || 'Local')}</span>
                     ${dist ? `<span style="color:var(--primary); font-weight:600;">${dist} km</span>` : ''}
                   </div>
                   <div class="crop-footer">
-                    <span class="price">₹${crop.price}/${crop.unit}</span>
+                    <span class="price">${formatCurrency(crop.price)}/${sanitizeHTML(crop.unit)}</span>
                     <button class="btn-primary" onclick="window.showListing('${crop.id}')">Details</button>
                   </div>
                 </div>
@@ -770,8 +850,8 @@ const LoginView = () => `
       </div>
       <form id="login-form" style="display: flex; flex-direction: column; gap: 1.2rem;">
         <div>
-          <label style="display:block; font-weight:600; margin-bottom:6px;">Email Address</label>
-          <input type="email" name="email" required placeholder="farmer@example.com" style="width:100%; padding:14px; border-radius:12px; border:1px solid #E5E7EB; outline: none;">
+          <label style="display:block; font-weight:600; margin-bottom:6px;">Email or Username</label>
+          <input type="text" name="email" required placeholder="farmer@example.com" style="width:100%; padding:14px; border-radius:12px; border:1px solid #E5E7EB; outline: none;">
         </div>
         <div>
           <label style="display:block; font-weight:600; margin-bottom:6px;">Password</label>
@@ -807,8 +887,12 @@ const SignupView = () => `
           </select>
         </div>
         <div>
+          <label style="display:block; font-weight:600; margin-bottom:6px;">Phone Number</label>
+          <input type="tel" name="phone" required placeholder="+91 98765 43210" style="width:100%; padding:14px; border-radius:12px; border:1px solid #E5E7EB; outline: none;">
+        </div>
+        <div>
           <label style="display:block; font-weight:600; margin-bottom:6px;">Create Password</label>
-          <input type="password" name="password" required minlength="6" placeholder="••••••••" style="width:100%; padding:14px; border-radius:12px; border:1px solid #E5E7EB; outline: none;">
+          <input type="password" name="password" required minlength="8" placeholder="••••••••" style="width:100%; padding:14px; border-radius:12px; border:1px solid #E5E7EB; outline: none;">
         </div>
         <button type="submit" class="btn-primary" style="padding: 16px; margin-top: 1rem; font-size: 1rem;">Setup Account</button>
         <p style="text-align: center; font-size: 0.95rem; margin-top: 1.5rem; color: var(--text-muted);">
@@ -873,7 +957,7 @@ const ProductDetailView = (id) => {
                         onclick="window.startChat('${crop.owner_id}')">
                   <i class="fa-solid fa-comments"></i> Chat with Farmer
                 </button>
-                <button class="btn-primary" style="flex: 1; padding: 18px; font-size: 1.1rem;" onclick="window.open('https://wa.me/911234567890?text=Hi, I am interested in your ${crop.name} on KhetGo')">
+                <button class="btn-primary" style="flex: 1; padding: 18px; font-size: 1.1rem;" onclick="window.open('https://wa.me/${crop.profiles?.phone || '911234567890'}?text=Hi, I am interested in your ${sanitizeHTML(crop.name)} on KhetGo')">
                   <i class="fa-brands fa-whatsapp"></i> Contact on WhatsApp
                 </button>
               </div>
@@ -882,7 +966,7 @@ const ProductDetailView = (id) => {
                 <i class="fa-solid fa-truck-ramp-box" style="font-size: 1.5rem; color: var(--secondary);"></i>
                 <div>
                   <div style="font-weight: 700;">Local Mandi Collection Point</div>
-                  <div style="font-size: 0.85rem; color: grey;">Sector 4, Main Mandi, Nagpur</div>
+                  <div style="font-size: 0.85rem; color: grey;">${sanitizeHTML(crop.profiles?.district || 'Sector 4, Main Mandi')}, Nagpur</div>
                 </div>
               </div>
 
@@ -911,9 +995,9 @@ const ProductDetailView = (id) => {
           <div class="glass-card">
             <h3 style="margin-bottom: 1.5rem;">Sold by</h3>
             <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1.5rem;">
-              <img src="https://ui-avatars.com/api/?name=${crop.farmer || 'Farmer'}&background=1B4332&color=fff&rounded=true" style="width: 60px; height: 60px;">
+              <img src="https://ui-avatars.com/api/?name=${crop.profiles?.full_name || 'Farmer'}&background=1B4332&color=fff&rounded=true" style="width: 60px; height: 60px;">
               <div>
-                <div style="font-weight: 700; font-size: 1.1rem;">${crop.farmer || 'Ram Singh'}</div>
+                <div style="font-weight: 700; font-size: 1.1rem;">${sanitizeHTML(crop.profiles?.full_name || 'Ram Singh')}</div>
                 <div class="verified-badge" style="margin-top: 4px; padding: 4px 10px;">
                   <i class="fa-solid fa-certificate"></i> Verified
                 </div>
@@ -991,6 +1075,10 @@ const ProfileView = () => `
             <label style="display:block; font-weight:600; margin-bottom:5px;">Pincode</label>
             <input type="text" name="pincode" value="${state.profile?.pincode || ''}" style="width:100%; padding:12px; border-radius:10px; border:1px solid #ddd;">
           </div>
+        </div>
+        <div>
+          <label style="display:block; font-weight:600; margin-bottom:5px;">Phone Number</label>
+          <input type="tel" name="phone" value="${state.profile?.phone || ''}" style="width:100%; padding:12px; border-radius:10px; border:1px solid #ddd;">
         </div>
         <button type="submit" class="btn-primary">Update Profile</button>
       </form>
@@ -1290,29 +1378,144 @@ window.exportKhataToPDF = () => {
   showNotification("Statement Ready", "Your financial report has been downloaded.");
 };
 
-const AdminView = () => `
-  <div class="fade-in">
-    ${Header('Platform Moderation')}
-    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem; margin-bottom: 2.5rem;">
-      <div class="glass-card">
-        <div style="color: grey; font-size: 0.8rem;">Total Active Listings</div>
-        <div style="font-size: 2rem; font-weight: 800;">${state.cropListings.length}</div>
+const AdminPortalView = () => {
+  const users = state.allProfiles || [];
+  const listings = state.allListings || [];
+
+  return `
+    <div class="fade-in">
+      ${Header('Platform Administration')}
+      
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1.5rem; margin-bottom: 2.5rem;">
+        <div class="glass-card" style="border-top: 4px solid var(--primary);">
+          <div style="color: var(--text-muted); font-size: 0.85rem; font-weight: 600;">Total Platform Users</div>
+          <div style="font-size: 2.5rem; font-weight: 800; margin: 10px 0;">${state.adminStats.totalUsers}</div>
+          <div style="font-size: 0.8rem; color: #059669;"><i class="fa-solid fa-arrow-up"></i> ${users.filter(u => u.is_verified).length} verified</div>
+        </div>
+        <div class="glass-card" style="border-top: 4px solid var(--secondary);">
+          <div style="color: var(--text-muted); font-size: 0.85rem; font-weight: 600;">Active Listings</div>
+          <div style="font-size: 2.5rem; font-weight: 800; margin: 10px 0;">${state.adminStats.totalListings}</div>
+          <div style="font-size: 0.8rem; color: #059669;"><i class="fa-solid fa-check"></i> Real-time marketplace</div>
+        </div>
+        <div class="glass-card" style="border-top: 4px solid var(--accent);">
+          <div style="color: var(--text-muted); font-size: 0.85rem; font-weight: 600;">Platform Revenue Flow</div>
+          <div style="font-size: 2.5rem; font-weight: 800; margin: 10px 0;">${formatCurrency(state.adminStats.totalRevenue)}</div>
+          <div style="font-size: 0.8rem; color: var(--text-muted);">Cumulative order volume</div>
+        </div>
       </div>
-      <div class="glass-card">
-        <div style="color: grey; font-size: 0.8rem;">Platform Users</div>
-        <div style="font-size: 2rem; font-weight: 800;">${state.cropListings.length + 5}</div>
-      </div>
-      <div class="glass-card">
-        <div style="color: grey; font-size: 0.8rem;">Active Orders</div>
-        <div style="font-size: 2rem; font-weight: 800;">${state.myBookings.length}</div>
-      </div>
+
+      <section style="margin-bottom: 3rem;">
+        <div class="section-title">
+          <h2 style="font-size: 1.5rem;"><i class="fa-solid fa-users"></i> User Management</h2>
+          <p style="font-size: 0.9rem; color: var(--text-muted);">Manage platform identities and verification status</p>
+        </div>
+        <div class="glass-card" style="padding: 0; overflow-x: auto;">
+          <table style="width: 100%; border-collapse: collapse; text-align: left;">
+            <thead style="background: #F9FAFB; border-bottom: 1px solid #E5E7EB;">
+              <tr>
+                <th style="padding: 1rem;">User</th>
+                <th style="padding: 1rem;">Role</th>
+                <th style="padding: 1rem;">Location</th>
+                <th style="padding: 1rem;">Status</th>
+                <th style="padding: 1rem; text-align: right;">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${users.map(u => `
+                <tr style="border-bottom: 1px solid #F3F4F6;">
+                  <td style="padding: 1rem;">
+                    <div style="font-weight: 600;">${sanitizeHTML(u.full_name || 'Anonymous')}</div>
+                    <div style="font-size: 0.75rem; color: var(--text-muted);">${u.id.substring(0, 8)}...</div>
+                  </td>
+                  <td style="padding: 1rem; text-transform: capitalize;">${u.role}</td>
+                  <td style="padding: 1rem;">${sanitizeHTML(u.district || 'N/A')}</td>
+                  <td style="padding: 1rem;">
+                    ${u.is_verified ?
+      '<span style="color: #059669; background: #ECFDF5; padding: 4px 8px; border-radius: 99px; font-size: 0.75rem;"><i class="fa-solid fa-check"></i> Verified</span>' :
+      '<span style="color: #DC2626; background: #FEF2F2; padding: 4px 8px; border-radius: 99px; font-size: 0.75rem;">Unverified</span>'}
+                  </td>
+                  <td style="padding: 1rem; text-align: right;">
+                    ${!u.is_verified ? `<button class="btn-primary" style="padding: 6px 12px; font-size: 0.75rem; background: #059669;" onclick="window.verifyUser('${u.id}')">Verify</button>` : ''}
+                  </td>
+                </tr>
+              `).join('') || '<tr><td colspan="5" style="padding: 2rem; text-align: center; color: grey;">No users found.</td></tr>'}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section>
+        <div class="section-title">
+          <h2 style="font-size: 1.5rem;"><i class="fa-solid fa-box-open"></i> Marketplace Catalog</h2>
+          <p style="font-size: 0.9rem; color: var(--text-muted);">Moderate active listings and delete violations</p>
+        </div>
+        <div class="glass-card" style="padding: 0; overflow-x: auto;">
+          <table style="width: 100%; border-collapse: collapse; text-align: left;">
+            <thead style="background: #F9FAFB; border-bottom: 1px solid #E5E7EB;">
+              <tr>
+                <th style="padding: 1rem;">Product</th>
+                <th style="padding: 1rem;">Price</th>
+                <th style="padding: 1rem;">Status</th>
+                <th style="padding: 1rem; text-align: right;">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${listings.map(l => `
+                <tr style="border-bottom: 1px solid #F3F4F6;">
+                  <td style="padding: 1rem;">
+                    <div style="font-weight: 600;">${sanitizeHTML(l.name)}</div>
+                    <div style="font-size: 0.75rem; color: var(--text-muted);">By ${l.owner_id.substring(0, 8)}...</div>
+                  </td>
+                  <td style="padding: 1rem;">${formatCurrency(l.price)}/${l.unit}</td>
+                  <td style="padding: 1rem;">
+                    ${l.is_verified ?
+          '<span style="color: #059669; background: #ECFDF5; padding: 4px 8px; border-radius: 99px; font-size: 0.75rem;"><i class="fa-solid fa-check"></i> Approved</span>' :
+          '<span style="color: #B45309; background: #FFFBEB; padding: 4px 8px; border-radius: 99px; font-size: 0.75rem;">Pending</span>'}
+                  </td>
+                  <td style="padding: 1rem; text-align: right; display: flex; gap: 8px; justify-content: flex-end;">
+                    ${!l.is_verified ? `<button class="btn-primary" style="padding: 6px 12px; font-size: 0.75rem; background: #059669;" onclick="window.verifyListing('${l.id}')">Approve</button>` : ''}
+                    <button class="btn-primary" style="padding: 6px 12px; font-size: 0.75rem; background: #DC2626;" onclick="window.deleteListing('${l.id}')">Remove</button>
+                  </td>
+                </tr>
+              `).join('') || '<tr><td colspan="4" style="padding: 2rem; text-align: center; color: grey;">Catalog is empty.</td></tr>'}
+            </tbody>
+          </table>
+        </div>
+      <section style="margin-top: 3rem;">
+        <div class="section-title">
+          <h2 style="font-size: 1.5rem;"><i class="fa-solid fa-chart-line"></i> Mandi Price Control</h2>
+          <p style="font-size: 0.9rem; color: var(--text-muted);">Manage real-time market volatility</p>
+        </div>
+        <div class="glass-card">
+          <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1rem;">
+            ${state.mandiPrices.map(m => `
+              <div style="padding: 1rem; border: 1px solid #F3F4F6; border-radius: 12px; display: flex; flex-direction: column; gap: 10px;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                  <span style="font-weight: 700;">${sanitizeHTML(m.crop)}</span>
+                  <span style="font-size: 0.75rem; color: var(--text-muted);">${m.unit}</span>
+                </div>
+                <div style="display: flex; gap: 8px;">
+                  <input type="number" id="mandi-price-${m.id}" value="${m.price}" style="flex: 1; padding: 8px; border-radius: 8px; border: 1px solid #E5E7EB; outline: none; font-size: 0.9rem;">
+                  <button class="btn-primary" style="padding: 8px 16px; font-size: 0.8rem;" onclick="window.updateMandiPrice('${m.id}', document.getElementById('mandi-price-${m.id}').value)">Set</button>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      </section>
     </div>
-    <div class="glass-card">
-      <h2 style="margin-bottom: 1.5rem;">System Overview</h2>
-      <p style="color: grey;">Admin tools are active. You have full moderation rights over all listings and profiles.</p>
-    </div>
-  </div>
-`;
+  `;
+};
+
+window.updateMandiPrice = async (id, newPrice) => {
+  const { error } = await supabase.from('mandi_prices').update({ price: newPrice, updated_at: new Date() }).eq('id', id);
+  if (error) showToast(error.message, 'error');
+  else {
+    showToast('Market price updated!', 'success');
+    fetchAllData();
+    fetchAllAdminData();
+  }
+};
 
 const ChatView = () => {
   if (!state.activeChat) return '<div class="fade-in">Select a user to start chatting.</div>';
@@ -1376,6 +1579,7 @@ window.sendMessage = async () => {
 
 window.setView = (view) => {
   state.currentView = view;
+  if (view === 'admin') fetchAllAdminData();
   render();
 };
 
@@ -1440,8 +1644,60 @@ window.logout = async () => {
   await supabase.auth.signOut();
   state.user = null;
   state.profile = null;
+  state.isAdmin = false;
+  localStorage.removeItem('khetgo_admin_session');
   window.setView('login');
 };
+
+window.verifyUser = async (profileId) => {
+  const { error } = await supabase.from('profiles').update({ is_verified: true }).eq('id', profileId);
+  if (error) showToast(error.message, 'error');
+  else {
+    showToast('User verified successfully!', 'success');
+    fetchAllAdminData();
+  }
+};
+
+window.verifyListing = async (listingId) => {
+  const { error } = await supabase.from('listings').update({ is_verified: true }).eq('id', listingId);
+  if (error) showToast(error.message, 'error');
+  else {
+    showToast('Listing verified!', 'success');
+    fetchAllAdminData();
+  }
+};
+
+window.deleteListing = async (listingId) => {
+  if (!confirm('Permanent delete this listing?')) return;
+  const { error } = await supabase.from('listings').delete().eq('id', listingId);
+  if (error) showToast(error.message, 'error');
+  else {
+    showToast('Listing deleted', 'info');
+    fetchAllAdminData();
+  }
+};
+
+async function fetchAllAdminData() {
+  if (!state.isAdmin) return;
+
+  const [profiles, listings, bookings] = await Promise.all([
+    supabase.from('profiles').select('*').order('created_at', { ascending: false }),
+    supabase.from('listings').select('*').order('created_at', { ascending: false }),
+    supabase.from('bookings').select('*').order('booking_date', { ascending: false })
+  ]);
+
+  state.allProfiles = profiles.data || [];
+  state.allListings = listings.data || [];
+  state.allBookings = bookings.data || [];
+
+  state.adminStats = {
+    totalUsers: state.allProfiles.length,
+    totalListings: state.allListings.length,
+    totalRevenue: state.allBookings.reduce((acc, b) => acc + (b.price_per_unit || 0), 0)
+  };
+
+  render();
+}
 
 // --- Core Engine ---
 function render() {
@@ -1481,7 +1737,7 @@ function render() {
     case 'news': content = NewsView(); break;
     case 'agri-store': content = AgriStoreView(); break;
     case 'soil-testing': content = SoilTestingView(); break;
-    case 'admin': content = AdminView(); break;
+    case 'admin': content = AdminPortalView(); break;
     case 'mandi-markets': content = MandiMarketsView(); break;
     case 'services': content = ServicesView(); break;
     default: content = DashboardView();
@@ -1503,17 +1759,67 @@ function bindEvents() {
     link.onclick = () => window.setView(link.dataset.view);
   });
 
+  // Debounced Search
+  const globalSearch = document.getElementById('global-search');
+  if (globalSearch) {
+    globalSearch.oninput = debounce((e) => {
+      state.searchQuery = e.target.value;
+      render();
+    }, 400);
+  }
+
+  // Debounced Filter inputs
+  const pincodeFilter = document.getElementById('filter-pincode');
+  if (pincodeFilter) {
+    pincodeFilter.oninput = debounce((e) => {
+      state.filters.pincode = e.target.value;
+      render();
+    }, 400);
+  }
+
+  const priceRange = document.getElementById('price-range');
+  if (priceRange) {
+    priceRange.oninput = (e) => {
+      state.filters.maxPrice = parseInt(e.target.value);
+      // We don't debounce range because users like immediate feedback on labels, 
+      // but if performance is bad we could debounce the render.
+      render();
+    };
+  }
+
+  const sortSelect = document.getElementById('sort-select');
+  if (sortSelect) {
+    sortSelect.onchange = (e) => {
+      state.filters.sortBy = e.target.value;
+      render();
+    };
+  }
+
   // Login Form
   const loginForm = document.getElementById('login-form');
   if (loginForm) {
     loginForm.onsubmit = async (e) => {
       e.preventDefault();
       const d = new FormData(loginForm);
+      const email = d.get('email');
+      const password = d.get('password');
+
+      // Admin Bypass as requested: login admin, pass admin
+      if (email === 'admin' && password === 'admin') {
+        state.isAdmin = true;
+        state.profile = { full_name: 'Master Admin', role: 'admin' };
+        state.user = { id: 'admin-bypass' };
+        localStorage.setItem('khetgo_admin_session', 'true');
+        showToast('Admin access granted', 'success');
+        window.setView('admin');
+        return;
+      }
+
       const { data, error } = await supabase.auth.signInWithPassword({
-        email: d.get('email'),
-        password: d.get('password'),
+        email: email,
+        password: password,
       });
-      if (error) alert(error.message);
+      if (error) showToast(error.message, 'error');
       else {
         await checkAuth();
         window.setView('dashboard');
@@ -1535,6 +1841,7 @@ function bindEvents() {
           data: {
             full_name: d.get('full_name'),
             role: d.get('role'),
+            phone: d.get('phone'),
           }
         }
       });
@@ -1543,32 +1850,6 @@ function bindEvents() {
         alert('Welcome! Profile created. Please check your email for confirmation.');
         window.setView('login');
       }
-    };
-  }
-
-  // Dynamic Search
-  const search = document.getElementById('global-search');
-  if (search) {
-    search.oninput = (e) => {
-      const cursorPosition = e.target.selectionStart;
-      state.searchQuery = e.target.value;
-      render();
-      // Re-focus and restore cursor position after render
-      const searchAfterRender = document.getElementById('global-search');
-      if (searchAfterRender && document.activeElement === document.body) {
-        searchAfterRender.focus();
-        searchAfterRender.setSelectionRange(cursorPosition, cursorPosition);
-      }
-    };
-  }
-
-  // Filter
-  const pFilter = document.getElementById('filter-pincode');
-  if (pFilter) {
-    pFilter.oninput = (e) => {
-      state.filters.pincode = e.target.value;
-      render();
-      document.getElementById('filter-pincode').focus();
     };
   }
 
@@ -1581,16 +1862,31 @@ function bindEvents() {
       const imageInput = document.getElementById('listing-images');
 
       const d = new FormData(form);
+      const price = parseFloat(d.get('price'));
+
+      if (isNaN(price) || price <= 0) {
+        showToast('Please enter a valid price', 'error');
+        return;
+      }
+
       publishBtn.disabled = true;
       publishBtn.innerHTML = 'Uploading... <i class="fa-solid fa-spinner fa-spin"></i>';
 
       let imageUrl = 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&q=80&w=400';
 
-      // Handle Image Upload to Supabase Storage
+      // Handle Image Upload with basic validation
       if (imageInput && imageInput.files.length > 0) {
         const file = imageInput.files[0];
+
+        if (file.size > 5 * 1024 * 1024) {
+          showToast('Image size must be less than 5MB', 'error');
+          publishBtn.disabled = false;
+          publishBtn.innerText = 'Publish to Marketplace';
+          return;
+        }
+
         const fileExt = file.name.split('.').pop();
-        const fileName = `${Math.random()}.${fileExt}`;
+        const fileName = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}.${fileExt}`;
         const filePath = `${state.user.id}/${fileName}`;
 
         const { error: uploadError } = await supabase.storage
@@ -1607,7 +1903,7 @@ function bindEvents() {
 
       const payload = {
         name: d.get('name'),
-        price: parseFloat(d.get('price')),
+        price: price,
         unit: d.get('unit'),
         quantity: d.get('quantity'),
         category: d.get('category'),
@@ -1622,11 +1918,11 @@ function bindEvents() {
 
       const { error } = await supabase.from('listings').insert([payload]);
       if (!error) {
-        showNotification("Success!", "Your crop listing is now live.");
-        alert('Listing live on KhetGo!');
+        showToast("Success! Your crop listing is now live.", "success");
         window.setView('marketplace');
+        fetchAllData();
       } else {
-        alert('Error: ' + error.message);
+        showToast('Error: ' + error.message, 'error');
         publishBtn.disabled = false;
         publishBtn.innerText = 'Publish to Marketplace';
       }
@@ -1640,23 +1936,7 @@ function bindEvents() {
     };
   }
 
-  // Price Range
-  const priceRange = document.getElementById('price-range');
-  if (priceRange) {
-    priceRange.oninput = (e) => {
-      state.filters.maxPrice = parseInt(e.target.value);
-      render();
-    };
-  }
 
-  // Sort
-  const sortSelect = document.getElementById('sort-select');
-  if (sortSelect) {
-    sortSelect.onchange = (e) => {
-      state.filters.sortBy = e.target.value;
-      render();
-    };
-  }
 
   // Profile Form
   const profileForm = document.getElementById('profile-form');
@@ -1667,12 +1947,15 @@ function bindEvents() {
       const { error } = await supabase.from('profiles').update({
         bio: d.get('bio'),
         district: d.get('district'),
-        pincode: d.get('pincode')
+        pincode: d.get('pincode'),
+        phone: d.get('phone')
       }).eq('id', state.user.id);
 
       if (!error) {
-        alert('Profile Updated!');
+        showToast('Profile Updated!', 'success');
         checkAuth();
+      } else {
+        showToast('Error: ' + error.message, 'error');
       }
     };
   }
@@ -1703,7 +1986,8 @@ function bindEvents() {
 function initCharts() {
   const miniCtx = document.getElementById('mandi-mini-chart');
   if (miniCtx) {
-    new Chart(miniCtx, {
+    if (state.charts.mini) state.charts.mini.destroy();
+    state.charts.mini = new Chart(miniCtx, {
       type: 'line',
       data: {
         labels: ['1 Jan', '3 Jan', '5 Jan', '7 Jan', '9 Jan', '11 Jan', '13 Jan'],
@@ -1729,7 +2013,8 @@ function initCharts() {
 
   const largeCtx = document.getElementById('mandi-large-chart');
   if (largeCtx) {
-    new Chart(largeCtx, {
+    if (state.charts.large) state.charts.large.destroy();
+    state.charts.large = new Chart(largeCtx, {
       type: 'line',
       data: {
         labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],

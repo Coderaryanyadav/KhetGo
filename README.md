@@ -54,6 +54,12 @@
 - **App-like Experience**: Full-screen mode with native feel
 - **Background Sync**: Auto-sync data when connection is restored
 
+### 🛡️ **Admin Control Panel**
+- **Platform Moderation**: Manage users and moderate marketplace listings
+- **Live Price Management**: Update mandi prices in real-time across the platform
+- **System Metrics**: Overview of platform growth and revenue flow
+- **Bypass Access**: Demo access with `admin` / `admin` credentials
+
 ### 🔗 **Social Sharing**
 - Share listings directly to WhatsApp, Facebook, Twitter
 - Generate shareable links for products
@@ -115,7 +121,9 @@ VITE_DEFAULT_LAT=21.1458
 VITE_DEFAULT_LNG=79.0882
 ```
 
-See [API_SETUP.md](./API_SETUP.md) for detailed setup instructions.
+```
+
+Note: For testing and demonstration, use **`admin`** as username and **`admin`** as password to access the platform management portal.
 
 ### 4. Database Setup
 
@@ -204,9 +212,6 @@ We welcome contributions from the community! Please read our [CONTRIBUTING.md](.
 
 ## 📚 Documentation
 
-- **[API Setup Guide](./API_SETUP.md)** - Get free API keys for all features
-- **[Deployment Guide](./DEPLOYMENT.md)** - Deploy to Vercel step-by-step
-- **[User Guide](./USER_GUIDE.md)** - Complete usage documentation
 - **[Changelog](./CHANGELOG.md)** - Version history and updates
 - **[Security Policy](./SECURITY.md)** - Security best practices
 - **[Contributing](./CONTRIBUTING.md)** - Contribution guidelines
