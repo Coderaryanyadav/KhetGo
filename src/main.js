@@ -26,6 +26,21 @@ window.formatCurrency = formatCurrency;
 window.sanitizeHTML = sanitizeHTML;
 window.escapeHTML = escapeHTML;
 
+window.toggleTheme = () => {
+  const isDark = document.documentElement.classList.toggle('dark-theme');
+  document.documentElement.classList.remove('light-theme');
+  if (!isDark) document.documentElement.classList.add('light-theme');
+  localStorage.setItem('khetgo_theme', isDark ? 'dark' : 'light');
+};
+
+// Initialize theme
+const savedTheme = localStorage.getItem('khetgo_theme');
+if (savedTheme === 'dark') {
+  document.documentElement.classList.add('dark-theme');
+} else if (savedTheme === 'light') {
+  document.documentElement.classList.add('light-theme');
+}
+
 const CONSTANTS = {
   DEFAULT_LAT: parseFloat(import.meta.env.VITE_DEFAULT_LAT) || 21.1458,
   DEFAULT_LNG: parseFloat(import.meta.env.VITE_DEFAULT_LNG) || 79.0882,
@@ -71,7 +86,8 @@ let state = {
     totalListings: 0,
     totalRevenue: 0
   },
-  charts: {}
+  charts: {},
+  advisorHistory: []
 };
 
 const translations = {
@@ -369,12 +385,15 @@ const Sidebar = () => `
     </nav>
 
     <div class="sidebar-footer" style="margin-top: auto; padding: 2rem 1rem; border-top: 1px solid rgba(255,255,255,0.08);">
-      <div style="margin-bottom: 2rem;">
-         <select onchange="window.setLanguage(this.value)" style="width:100%; padding:10px; border-radius:12px; background:rgba(255,255,255,0.05); color:white; border:1px solid rgba(255,255,255,0.1); outline:none; font-size: 0.85rem; cursor: pointer;">
+      <div style="margin-bottom: 2rem; display: flex; gap: 8px;">
+         <select onchange="window.setLanguage(this.value)" style="flex: 1; padding:10px; border-radius:12px; background:rgba(255,255,255,0.05); color:white; border:1px solid rgba(255,255,255,0.1); outline:none; font-size: 0.85rem; cursor: pointer;">
             <option value="en" ${state.language === 'en' ? 'selected' : ''}>🇬🇧 English</option>
             <option value="hi" ${state.language === 'hi' ? 'selected' : ''}>🇮🇳 हिन्दी</option>
             <option value="mr" ${state.language === 'mr' ? 'selected' : ''}>🇮🇳 मराठी</option>
          </select>
+         <button onclick="window.toggleTheme()" class="nav-link" style="padding: 10px; margin: 0; min-height: unset; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: var(--accent);">
+            <i class="fa-solid fa-circle-half-stroke"></i>
+         </button>
       </div>
 
       <div style="margin-bottom: 2rem; display: flex; align-items: center; gap: 12px; cursor: pointer;" onclick="window.setView('profile')">
@@ -435,7 +454,20 @@ const DashboardView = () => `
         </div>
         
         <div class="marketplace-grid">
-          ${state.cropListings.slice(0, 3).map(crop => `
+          ${state.isLoading ? `
+            <div class="crop-card">
+              <div class="skeleton skeleton-image"></div>
+              <div class="crop-details"><div class="skeleton skeleton-title"></div><div class="skeleton skeleton-text"></div></div>
+            </div>
+            <div class="crop-card">
+              <div class="skeleton skeleton-image"></div>
+              <div class="crop-details"><div class="skeleton skeleton-title"></div><div class="skeleton skeleton-text"></div></div>
+            </div>
+            <div class="crop-card">
+              <div class="skeleton skeleton-image"></div>
+              <div class="crop-details"><div class="skeleton skeleton-title"></div><div class="skeleton skeleton-text"></div></div>
+            </div>
+          ` : state.cropListings.slice(0, 3).map(crop => `
             <div class="crop-card" onclick="window.showListing('${crop.id}')">
               <div style="position: relative;">
                 <img src="${crop.image_url || 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&q=80&w=400'}" class="crop-image" alt="${sanitizeHTML(crop.name)}">
@@ -795,7 +827,14 @@ const MarketplaceView = () => {
         </aside>
         
         <section class="marketplace-grid">
-          ${filtered.map(crop => {
+          ${state.isLoading ? `
+            <div class="crop-card"><div class="skeleton skeleton-image"></div><div class="crop-details"><div class="skeleton skeleton-title"></div><div class="skeleton skeleton-text"></div></div></div>
+            <div class="crop-card"><div class="skeleton skeleton-image"></div><div class="crop-details"><div class="skeleton skeleton-title"></div><div class="skeleton skeleton-text"></div></div></div>
+            <div class="crop-card"><div class="skeleton skeleton-image"></div><div class="crop-details"><div class="skeleton skeleton-title"></div><div class="skeleton skeleton-text"></div></div></div>
+            <div class="crop-card"><div class="skeleton skeleton-image"></div><div class="crop-details"><div class="skeleton skeleton-title"></div><div class="skeleton skeleton-text"></div></div></div>
+            <div class="crop-card"><div class="skeleton skeleton-image"></div><div class="crop-details"><div class="skeleton skeleton-title"></div><div class="skeleton skeleton-text"></div></div></div>
+            <div class="crop-card"><div class="skeleton skeleton-image"></div><div class="crop-details"><div class="skeleton skeleton-title"></div><div class="skeleton skeleton-text"></div></div></div>
+          ` : filtered.map(crop => {
     const dist = state.location ? calculateDistance(state.location.lat, state.location.lng, crop.lat, crop.lng) : null;
     return `
               <div class="crop-card" onclick="window.showListing('${crop.id}')">
@@ -1330,38 +1369,49 @@ const AdvisorView = () => `
     ${Header('Agri-Intelligence Advisor')}
     <div class="dashboard-grid">
       <section>
-        <div class="glass-card" style="margin-bottom: 2.5rem; background: linear-gradient(135deg, rgba(67, 56, 202, 0.08) 0%, rgba(99, 102, 241, 0.05) 100%); border: 1px solid rgba(67, 56, 202, 0.15); padding: 2.5rem;">
-          <div style="display: flex; gap: 2rem; align-items: center;">
-             <div style="font-size: 3.5rem; color: #4338CA; opacity: 0.9;"><i class="fa-solid fa-wand-magic-sparkles"></i></div>
-             <div>
-                <h2 style="color: #4338CA; font-size: 1.5rem; margin-bottom: 0.75rem; font-weight: 900;">AI Visionary Diagnostic</h2>
-                <p style="color: var(--text-muted); line-height: 1.7; font-size: 1rem;">
-                   Deploy our neural networks to analyze crop anomalies. Describe symptoms such as discoloration, parasite presence, or growth stagnation for an immediate agronomic resolution.
-                </p>
+        <div class="glass-card" style="display: flex; flex-direction: column; height: 650px; padding: 0;">
+          <div id="advisor-messages" style="flex: 1; overflow-y: auto; padding: 2rem; display: flex; flex-direction: column; gap: 1.5rem;">
+             ${state.advisorHistory.length === 0 ? `
+               <div style="text-align: center; margin-top: 4rem; opacity: 0.6;">
+                 <i class="fa-solid fa-robot" style="font-size: 4rem; color: #4338CA; margin-bottom: 2rem;"></i>
+                 <h2 style="font-size: 1.5rem; color: var(--text-main);">KhetGo Neural Advisor Online</h2>
+                 <p style="max-width: 400px; margin: 1rem auto; line-height: 1.6;">Synchronized with global agronomic databases. How can I optimize your yield today?</p>
+               </div>
+             ` : state.advisorHistory.map(m => `
+               <div style="display: flex; flex-direction: column; align-items: ${m.role === 'user' ? 'flex-end' : 'flex-start'};">
+                  <div style="max-width: 80%; padding: 1.25rem 1.75rem; border-radius: 20px; font-size: 1rem; line-height: 1.7; position: relative;
+                              ${m.role === 'user' ? 'background: #4338CA; color: white; border-bottom-right-radius: 4px;' : 'background: rgba(0,0,0,0.04); color: var(--text-main); border-bottom-left-radius: 4px; border: 1px solid rgba(0,0,0,0.05); shadow: var(--shadow-sm);'}">
+                    ${m.content.replace(/\n/g, '<br>')}
+                  </div>
+                  <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 6px; font-weight: 700; text-transform: uppercase;">
+                    ${m.role === 'user' ? 'You' : 'Expert AI'} • ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </div>
+               </div>
+             `).join('')}
+             <div id="advisor-thinking" style="display: none; align-items: center; gap: 12px; color: #4338CA;">
+                <div class="skeleton" style="width: 100px; height: 40px; border-radius: 12px;"></div>
+                <span style="font-size: 0.85rem; font-weight: 800; letter-spacing: 0.05em;">Consulting neural network...</span>
              </div>
           </div>
-        </div>
-
-        <div class="glass-card" style="padding: 2.5rem; border: none; box-shadow: var(--shadow);">
-          <div style="margin-bottom: 1.5rem;">
-             <label style="display: block; font-weight: 800; font-size: 0.85rem; color: var(--text-muted); text-transform: uppercase; margin-bottom: 12px; letter-spacing: 0.05em;">Input Observation Log</label>
-             <textarea id="advisor-query" style="width:100%; height:180px; padding:1.5rem; border-radius:20px; border:1px solid rgba(0,0,0,0.08); outline:none; font-size:1.1rem; line-height: 1.6; background: rgba(0,0,0,0.01); resize: none;" 
-                       placeholder="e.g., Identifying rust-colored filaments on wheat stalks after heavy precipitation..."></textarea>
+          <div style="padding: 1.5rem; border-top: 1px solid rgba(0,0,0,0.05); background: rgba(0,0,0,0.01); display: flex; gap: 1rem;">
+             <textarea id="advisor-query" style="flex: 1; height: 60px; padding: 1rem 1.5rem; border-radius: 14px; border: 1px solid rgba(0,0,0,0.08); outline: none; font-size: 1rem; resize: none; background: white;" 
+                       placeholder="Ask about crop diseases, soil health, or market trends..."></textarea>
+             <button class="btn-primary" style="background: #4338CA; width: 60px; height: 60px; padding: 0; border-radius: 14px; display: flex; align-items: center; justify-content: center;" onclick="window.askAdvisor()">
+                <i class="fa-solid fa-paper-plane"></i>
+             </button>
           </div>
-          <button class="btn-primary" style="width:100%; padding:20px; font-size: 1.15rem; font-weight: 800; background: #4338CA; box-shadow: 0 10px 25px rgba(67, 56, 202, 0.2);" onclick="window.askAdvisor()">
-            <i class="fa-solid fa-microchip"></i> Initialize Neural Analysis
-          </button>
         </div>
-
-        <div id="advisor-result" style="margin-top:2.5rem;"></div>
       </section>
       <aside>
-        <div class="glass-card" style="padding: 2rem; background: rgba(0,0,0,0.02); border: 1px dashed rgba(67, 56, 202, 0.2);">
-          <h3 style="margin-bottom: 1.25rem; font-size: 1.1rem; font-weight: 800; display: flex; align-items: center; gap: 10px;">
-            <i class="fa-solid fa-history" style="color: #4338CA;"></i> Consultation Logs
+        <div class="glass-card" style="padding: 2rem; background: linear-gradient(135deg, rgba(67, 56, 202, 0.05) 0%, transparent 100%);">
+          <h3 style="margin-bottom: 1.5rem; font-size: 1.1rem; font-weight: 800; display: flex; align-items: center; gap: 10px;">
+            <i class="fa-solid fa-bolt" style="color: #4338CA;"></i> Quick Actions
           </h3>
-          <p style="font-size: 0.95rem; color: var(--text-muted); line-height: 1.6;">No forensic diagnostic signatures found on this node. Your AI consultations are encrypted and stored locally.</p>
-          <button class="btn-primary" style="margin-top: 1.5rem; width: 100%; background: none; border: 1px solid #4338CA; color: #4338CA; box-shadow: none;" onclick="showToast('Synchronizing consultation database...', 'info')">Sync Cloud Archive</button>
+          <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+            <button class="btn-ghost" style="justify-content: flex-start; text-align: left; padding: 1rem; border: 1px solid rgba(67, 56, 202, 0.1);" onclick="document.getElementById('advisor-query').value='What are the best organic fertilizers for wheat?'; window.askAdvisor()">Organic Fertilizers</button>
+            <button class="btn-ghost" style="justify-content: flex-start; text-align: left; padding: 1rem; border: 1px solid rgba(67, 56, 202, 0.1);" onclick="document.getElementById('advisor-query').value='Identify symptoms of leaf rust in paddy.'; window.askAdvisor()">Caddy Disease Check</button>
+            <button class="btn-ghost" style="justify-content: flex-start; text-align: left; padding: 1rem; border: 1px solid rgba(67, 56, 202, 0.1);" onclick="document.getElementById('advisor-query').value='How to implement drip irrigation in 2 acres?'; window.askAdvisor()">Drip Irrigation</button>
+          </div>
         </div>
       </aside>
     </div>
@@ -1402,6 +1452,12 @@ const KhataView = () => {
 
       <div class="dashboard-grid">
         <section>
+          <div class="glass-card" style="margin-bottom: 2.5rem; padding: 2rem;">
+            <h3 style="font-size: 1.25rem; margin-bottom: 2rem; font-weight: 800;">Capital Analytics</h3>
+            <div style="height: 300px;">
+               <canvas id="khata-analysis-chart"></canvas>
+            </div>
+          </div>
           <div class="glass-card" style="margin-bottom: 2.5rem; padding: 2rem;">
             <h3 style="font-size: 1.25rem; margin-bottom: 2rem; font-weight: 800; color: var(--text-main);">Record Ledger Synchronization</h3>
             <form id="khata-form" style="display:grid; grid-template-columns: 1fr 1fr; gap:1.5rem;">
@@ -1486,89 +1542,53 @@ const AcademyView = () => `
 
 window.setLanguage = (lang) => {
   state.language = lang;
+  localStorage.setItem('khetgo_language', lang);
   render();
 };
 
 window.askAdvisor = async () => {
-  const query = document.getElementById('advisor-query').value.trim();
+  const input = document.getElementById('advisor-query');
+  const query = input.value.trim();
   if (!query) return;
-  const resultDiv = document.getElementById('advisor-result');
-  resultDiv.innerHTML = '<div class="glass-card">Consulting AI Expert... <i class="fa-solid fa-spinner fa-spin"></i></div>';
+
+  state.advisorHistory.push({ role: 'user', content: query });
+  input.value = '';
+  render();
+
+  const msgDiv = document.getElementById('advisor-messages');
+  const thinking = document.getElementById('advisor-thinking');
+  if (thinking) thinking.style.display = 'flex';
+  if (msgDiv) msgDiv.scrollTop = msgDiv.scrollHeight;
 
   try {
-    const apiKey = import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.VITE_HUGGINGFACE_API_KEY;
+    const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+    if (!apiKey) throw new Error('AI Uplink Offline (No API Key)');
 
-    if (!apiKey) {
-      throw new Error('No AI API key configured. Please add VITE_GEMINI_API_KEY to your .env file.');
-    }
-
-    let advice = '';
-
-    // Try Google Gemini (Industrial Grade Tuning)
-    if (import.meta.env.VITE_GEMINI_API_KEY) {
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${import.meta.env.VITE_GEMINI_API_KEY}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{
-            parts: [{
-              text: `SYSTEM: You are KhetGo Industrial AI Advisor. Your persona is a PhD Agronomist with 20 years of field experience in Indian climate zones.
-                     OBJECTIVE: Provide high-fidelity, actionable, and scientific agricultural advice.
-                     CONSTRAINTS: 3-4 bullet points maximum. Focus on ROI, soil health, and pest management.
-                     USER QUERY: "${query}"`
-            }]
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{
+          parts: [{
+            text: `SYSTEM: You are KhetGo Industrial AI Advisor. Your persona is a PhD Agronomist with 20 years of field experience in Indian climate zones.
+                   OBJECTIVE: Provide high-fidelity, actionable, and scientific agricultural advice. Keep it strictly to 2-3 concise points.
+                   USER QUERY: "${query}"`
           }]
-        })
-      });
+        }]
+      })
+    });
 
-      const data = await response.json();
-      advice = data.candidates?.[0]?.content?.parts?.[0]?.text || 'Intelligence synchronization failed. Re-initiating uplink.';
-    }
-    // Fallback to HuggingFace
-    else if (import.meta.env.VITE_HUGGINGFACE_API_KEY) {
-      const response = await fetch('https://api-inference.huggingface.co/models/facebook/blenderbot-400M-distill', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${import.meta.env.VITE_HUGGINGFACE_API_KEY}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          inputs: `As an agricultural expert, provide advice for: ${query}`
-        })
-      });
+    if (!response.ok) throw new Error('Neural frequency collision (API Error)');
 
-      const data = await response.json();
-      advice = data.generated_text || data[0]?.generated_text || 'Unable to generate advice.';
-    }
-
-    resultDiv.innerHTML = `
-      <div class="glass-card fade-in" style="border-left: 5px solid var(--primary);">
-        <h3 style="margin-bottom: 1rem;"><i class="fa-solid fa-robot"></i> AI Expert Recommendation</h3>
-        <p style="line-height:1.6;"><strong>Your Query:</strong> "${query}"</p>
-        <div style="background: #F0FDF4; padding: 1.5rem; border-radius: 12px; margin: 1rem 0; line-height: 1.8;">
-          ${advice.replace(/\n/g, '<br>')}
-        </div>
-        <div style="font-size: 0.75rem; color: grey; font-style: italic; margin-top: 1rem;">
-          ⚠️ Powered by AI. Always consult local agricultural experts for critical decisions.
-        </div>
-      </div>
-    `;
-  } catch (error) {
-    console.error('AI Advisor Error:', error);
-    resultDiv.innerHTML = `
-      <div class="glass-card" style="border-left: 5px solid #EF4444;">
-        <h3 style="color: #EF4444;">⚠️ Connection Issue</h3>
-        <p style="line-height:1.6;">
-          ${error.message.includes('API key')
-        ? 'AI service not configured. Please add your API key to environment variables.'
-        : 'Unable to reach AI service. Please check your internet connection and try again.'}
-        </p>
-        <details style="margin-top: 1rem; font-size: 0.85rem; color: grey;">
-          <summary style="cursor: pointer;">Technical Details</summary>
-          <pre style="margin-top: 0.5rem; padding: 1rem; background: #f9f9f9; border-radius: 8px; overflow-x: auto;">${error.message}</pre>
-        </details>
-      </div>
-    `;
+    const data = await response.json();
+    const advice = data.candidates?.[0]?.content?.parts?.[0]?.text || 'Intelligence synchronization interrupted.';
+    state.advisorHistory.push({ role: 'ai', content: advice });
+  } catch (err) {
+    state.advisorHistory.push({ role: 'ai', content: `Neural Link Error: ${err.message}. Please verify API connectivity.` });
+  } finally {
+    render();
+    const newMsgDiv = document.getElementById('advisor-messages');
+    if (newMsgDiv) newMsgDiv.scrollTop = newMsgDiv.scrollHeight;
   }
 };
 
@@ -2272,27 +2292,31 @@ function initCharts() {
     });
   }
 
-  const largeCtx = document.getElementById('mandi-large-chart');
-  if (largeCtx) {
-    if (state.charts.large) state.charts.large.destroy();
-    state.charts.large = new Chart(largeCtx, {
-      type: 'line',
+  const khataCtx = document.getElementById('khata-analysis-chart');
+  if (khataCtx) {
+    if (state.charts.khata) state.charts.khata.destroy();
+
+    const incomeTotal = state.ledgerEntries.filter(e => e.type === 'income').reduce((a, b) => a + b.amount, 0);
+    const expenseTotal = state.ledgerEntries.filter(e => e.type === 'expense').reduce((a, b) => a + b.amount, 0);
+
+    state.charts.khata = new Chart(khataCtx, {
+      type: 'doughnut',
       data: {
-        labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
+        labels: ['Cash Inflow', 'Operational Burn'],
         datasets: [{
-          label: 'Market Average (₹/Qtl)',
-          data: [2100, 2250, 2300, 2200, 2150, 2400, 2600, 2550, 2450, 2600, 2700, 2800],
-          borderColor: '#2D6A4F',
-          tension: 0.3,
-          fill: true,
-          backgroundColor: 'rgba(45, 106, 79, 0.05)'
+          data: [incomeTotal || 1, expenseTotal || 0],
+          backgroundColor: ['#10B981', '#EF4444'],
+          borderWidth: 0,
+          hoverOffset: 20
         }]
       },
       options: {
         responsive: true,
         maintainAspectRatio: false,
-        plugins: { legend: { position: 'top' } },
-        scales: { y: { beginAtZero: false, grid: { color: '#f0f0f0' } }, x: { grid: { display: false } } }
+        cutout: '75%',
+        plugins: {
+          legend: { position: 'bottom', labels: { usePointStyle: true, padding: 25, font: { weight: '800' } } }
+        }
       }
     });
   }
@@ -2300,6 +2324,9 @@ function initCharts() {
 
 // --- Kickoff ---
 (async () => {
+  const savedLang = localStorage.getItem('khetgo_language');
+  if (savedLang) state.language = savedLang;
+
   await checkAuth();
   if (state.user) fetchAllData();
   render();

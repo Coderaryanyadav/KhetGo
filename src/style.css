@@ -38,7 +38,7 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not(.light-theme) {
     --background: #080C10;
     --card-bg: rgba(22, 27, 34, 0.9);
     --text-main: #F0F6FC;
@@ -51,6 +51,30 @@
     --glass-border: rgba(255, 255, 255, 0.05);
     --glass-hover: rgba(255, 255, 255, 0.1);
   }
+}
+
+:root.dark-theme {
+  --background: #080C10;
+  --card-bg: rgba(22, 27, 34, 0.9);
+  --text-main: #F0F6FC;
+  --text-muted: #8B949E;
+  --white: #F0F6FC;
+  --shadow: 0 15px 40px rgba(0, 0, 0, 0.6);
+  --primary: #2D6A4F;
+  --primary-light: #52B788;
+  --primary-dark: #1B4332;
+  --glass-border: rgba(255, 255, 255, 0.05);
+  --glass-hover: rgba(255, 255, 255, 0.1);
+}
+
+:root.light-theme {
+  --background: #F0F4F2;
+  --card-bg: rgba(255, 255, 255, 0.9);
+  --text-main: #1B4332;
+  --text-muted: #6B7280;
+  --white: #ffffff;
+  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.05);
+  --shadow: 0 10px 30px -5px rgba(27, 67, 50, 0.15);
 }
 
 * {
