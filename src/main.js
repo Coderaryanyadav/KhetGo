@@ -106,6 +106,7 @@ async function checkAuth() {
       subscribeToMessages();
       requestNotificationPermission();
       getGeoLocation();
+      startMarketPolling();
     } else {
       // Re-validate session from local storage safely
       if (localStorage.getItem('khetgo_admin_session') === 'true' && !state.user) {
@@ -179,20 +180,27 @@ async function getGeoLocation() {
 async function fetchWeather(lat, lng) {
   const apiKey = import.meta.env.VITE_OPENWEATHER_API_KEY;
   if (!apiKey) {
-    console.warn('OpenWeather API key not configured');
+    console.warn('Weather configuration missing');
     state.weather = null;
     return;
   }
 
+  // Ensure coordinates are valid numbers or fallback to CONSTANTS
+  const finalLat = (isNaN(lat) || lat === null) ? CONSTANTS.DEFAULT_LAT : lat;
+  const finalLng = (isNaN(lng) || lng === null) ? CONSTANTS.DEFAULT_LNG : lng;
+
   state.weatherLoading = true;
   try {
     const response = await fetch(
-      `https://api.openweathermap.org/data/2.5/forecast?lat=${lat}&lon=${lng}&units=metric&appid=${apiKey}`
+      `https://api.openweathermap.org/data/2.5/forecast?lat=${finalLat}&lon=${finalLng}&units=metric&appid=${apiKey}`
     );
-    if (!response.ok) throw new Error('Weather service unavailable');
+    if (!response.ok) {
+      const errData = await response.json();
+      throw new Error(errData.message || 'Weather satellite offline');
+    }
 
     const data = await response.json();
-    if (!data || !data.list) throw new Error('Invalid weather data');
+    if (!data || !data.list) throw new Error('Incomplete telemetry data');
 
     const dailyForecast = {};
     data.list.forEach(item => {
@@ -209,12 +217,13 @@ async function fetchWeather(lat, lng) {
 
     state.weather = {
       current: data.list[0],
-      daily: Object.entries(dailyForecast).slice(0, 7).map(([day, data]) => ({ day, ...data })),
+      daily: Object.entries(dailyForecast).slice(0, 7).map(([day, val]) => ({ day, ...val })),
       city: data.city.name
     };
   } catch (error) {
-    console.error('Weather error:', error);
+    console.error('Weather diagnostics failure:', error.message);
     state.weather = null;
+    showToast(`Weather Link Issue: ${error.message}`, 'error');
   } finally {
     state.weatherLoading = false;
     render();
@@ -246,6 +255,19 @@ async function requestNotificationPermission() {
   if ("Notification" in window && Notification.permission === "default") {
     await Notification.requestPermission();
   }
+}
+
+// Market Polling Engine (60s cycle)
+function startMarketPolling() {
+  if (window._marketInterval) clearInterval(window._marketInterval);
+  window._marketInterval = setInterval(async () => {
+    const { data, error } = await supabase.from('mandi_prices').select('*').order('updated_at', { ascending: false });
+    if (!error && data) {
+      state.mandiPrices = data;
+      // Only re-render if we are on dashboard or admin
+      if (['dashboard', 'admin'].includes(state.currentView)) render();
+    }
+  }, 60000);
 }
 
 // --- Data Fetching ---
@@ -1433,14 +1455,14 @@ const AcademyView = () => `
     <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 2.5rem; margin-top: 1rem;">
       ${state.academyContent.map(v => `
         <div class="crop-card" style="border: 1px solid rgba(255,255,255,0.05); transition: var(--transition);">
-          <div style="position:relative; overflow: hidden; border-radius: 20px 20px 0 0;">
-            <img src="${v.thumbnail_url}" class="crop-image" style="height:220px; transition: transform 0.5s;" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">
-            <div style="position:absolute; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.2); display: flex; align-items: center; justify-content: center;">
-               <div style="font-size:3.5rem; color:white; opacity:0.9; cursor:pointer; filter: drop-shadow(0 10px 20px rgba(0,0,0,0.3));" onclick="window.open('${v.video_url}')">
+          <div style="position:relative; overflow: hidden; border-radius: 20px 20px 0 0; background: #000;">
+            <img src="${v.thumbnail_url}" class="crop-image" style="height:220px; transition: transform 0.6s; opacity: 0.8;" onmouseover="this.style.transform='scale(1.1)'; this.style.opacity='0.6'" onmouseout="this.style.transform='scale(1)'; this.style.opacity='0.8'">
+            <div style="position:absolute; top:0; left:0; width:100%; height:100%; display: flex; align-items: center; justify-content: center; pointer-events: none;">
+               <div style="font-size:4rem; color:var(--accent); cursor:pointer; filter: drop-shadow(0 0 20px rgba(149, 213, 178, 0.4)); opacity: 0.9;" onclick="window.open('${v.video_url}')">
                  <i class="fa-solid fa-circle-play"></i>
                </div>
             </div>
-            <div style="position:absolute; bottom: 15px; left: 15px; background: var(--secondary); color: white; padding: 4px 12px; border-radius: 50px; font-size: 0.7rem; font-weight: 800; text-transform: uppercase;">Professional</div>
+            <div style="position:absolute; bottom: 15px; left: 15px; background: var(--secondary); color: white; padding: 6px 14px; border-radius: 50px; font-size: 0.75rem; font-weight: 900; text-transform: uppercase; z-index: 10;">Industrial Intelligence</div>
           </div>
           <div class="crop-details" style="padding: 1.75rem;">
             <div style="font-size:0.75rem; color: var(--secondary); font-weight:800; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;">${v.category}</div>
@@ -1482,22 +1504,25 @@ window.askAdvisor = async () => {
 
     let advice = '';
 
-    // Try Google Gemini first
+    // Try Google Gemini (Industrial Grade Tuning)
     if (import.meta.env.VITE_GEMINI_API_KEY) {
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${import.meta.env.VITE_GEMINI_API_KEY}`, {
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${import.meta.env.VITE_GEMINI_API_KEY}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [{
             parts: [{
-              text: `You are an expert agricultural advisor in India. A farmer asks: "${query}". Provide specific, actionable advice in 3-4 bullet points. Focus on practical solutions for Indian farming conditions.`
+              text: `SYSTEM: You are KhetGo Industrial AI Advisor. Your persona is a PhD Agronomist with 20 years of field experience in Indian climate zones.
+                     OBJECTIVE: Provide high-fidelity, actionable, and scientific agricultural advice.
+                     CONSTRAINTS: 3-4 bullet points maximum. Focus on ROI, soil health, and pest management.
+                     USER QUERY: "${query}"`
             }]
           }]
         })
       });
 
       const data = await response.json();
-      advice = data.candidates?.[0]?.content?.parts?.[0]?.text || 'Unable to generate advice at this time.';
+      advice = data.candidates?.[0]?.content?.parts?.[0]?.text || 'Intelligence synchronization failed. Re-initiating uplink.';
     }
     // Fallback to HuggingFace
     else if (import.meta.env.VITE_HUGGINGFACE_API_KEY) {
@@ -1720,12 +1745,20 @@ const AdminPortalView = () => {
 };
 
 window.updateMandiPrice = async (id, newPrice) => {
-  const { error } = await supabase.from('mandi_prices').update({ price: newPrice, updated_at: new Date() }).eq('id', id);
+  if (!state.isAdmin) return showToast('Unauthorized command sequence.', 'error');
+  const priceParsed = parseFloat(newPrice);
+  if (isNaN(priceParsed)) return showToast('Invalid numeric input.', 'error');
+
+  const { error } = await supabase.from('mandi_prices').update({
+    price: priceParsed,
+    updated_at: new Date().toISOString()
+  }).eq('id', id);
+
   if (error) showToast(error.message, 'error');
   else {
-    showToast('Market price updated!', 'success');
-    fetchAllData();
+    showToast('Market volatility updated.', 'success');
     fetchAllAdminData();
+    fetchAllData();
   }
 };
 
@@ -1804,9 +1837,14 @@ window.showListing = (id) => {
 };
 
 window.deleteItem = async (id) => {
-  if (!confirm('Permanent delete this listing?')) return;
-  const { error } = await supabase.from('listings').delete().eq('id', id);
-  if (!error) fetchAllData();
+  if (!confirm('Permanent deletion authorized? This action cannot be rescinded.')) return;
+  // Ensure user can only delete their own listings (enforced by owner_id check)
+  const { error } = await supabase.from('listings').delete().eq('id', id).eq('owner_id', state.user.id);
+  if (error) showToast(error.message, 'error');
+  else {
+    showToast('Inventory entry purged successfully', 'success');
+    fetchAllData();
+  }
 };
 
 window.placeOrder = async (listingId) => {
@@ -1867,7 +1905,7 @@ window.bookService = async (itemName, price) => {
 };
 
 window.resetFilters = () => {
-  state.filters = { pincode: '', minPrice: 0, maxPrice: 10000, sortBy: 'newest' };
+  state.filters = { pincode: '', minPrice: 0, maxPrice: 250000, sortBy: 'newest' };
   render();
 };
 
