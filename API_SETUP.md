@@ -46,7 +46,7 @@ VITE_DEFAULT_LNG=79.0882
 ## 3. 📊 Analytics (Google Analytics 4) - FREE
 
 **Setup**: [Google Analytics](https://analytics.google.com/)
-
+s
 1. Create new GA4 property
 2. Get your Measurement ID (starts with `G-`)
 3. Add to `.env`:

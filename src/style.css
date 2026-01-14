@@ -379,8 +379,98 @@ header h1 {
   }
 }
 
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes slideOut {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+}
+
 .fade-in {
   animation: fadeIn 0.4s ease-out forwards;
+}
+
+/* Toast Notifications */
+.toast-notification {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  min-width: 250px;
+  max-width: 400px;
+  padding: 16px 24px;
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  z-index: 10000;
+  font-weight: 600;
+  font-size: 0.95rem;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.toast-success {
+  background: #10b981;
+  color: white;
+}
+
+.toast-error {
+  background: #ef4444;
+  color: white;
+}
+
+.toast-warning {
+  background: #f59e0b;
+  color: white;
+}
+
+.toast-info {
+  background: #3b82f6;
+  color: white;
+}
+
+/* Loading States */
+.btn-loading {
+  position: relative;
+  pointer-events: none;
+  opacity: 0.7;
+}
+
+.btn-loading::after {
+  content: '';
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  top: 50%;
+  left: 50%;
+  margin-left: -8px;
+  margin-top: -8px;
+  border: 2px solid transparent;
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* Mobile Menu Toggle */
@@ -564,7 +654,8 @@ header h1 {
   .main-content {
     margin-left: 0;
     padding: 1rem;
-    padding-top: 4.5rem; /* Space for mobile menu toggle */
+    padding-top: 4.5rem;
+    /* Space for mobile menu toggle */
     width: 100%;
   }
 
@@ -717,6 +808,7 @@ header h1 {
 
 /* Touch-friendly enhancements */
 @media (hover: none) and (pointer: coarse) {
+
   /* Increase touch targets for mobile */
   .btn-primary,
   .nav-link,
@@ -773,6 +865,7 @@ header h1 {
 
 /* Print styles */
 @media print {
+
   .sidebar,
   .mobile-menu-toggle,
   .mobile-overlay,
@@ -795,6 +888,7 @@ header h1 {
 
 /* Accessibility - Reduced motion */
 @media (prefers-reduced-motion: reduce) {
+
   *,
   *::before,
   *::after {
