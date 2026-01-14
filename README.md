@@ -141,12 +141,24 @@ npm run dev
 
 Visit `http://localhost:5173` to see the app!
 
-### 6. Build for Production
+### 6. Build and Optimize for Production
+
+For a professional, production-ready build, we provide an automated build script that handles cleaning, dependency verification, and chunk optimization:
 
 ```bash
-npm run build
+# Run the automated build and polish script
+chmod +x build-polish.sh
+./build-polish.sh
+
+# Preview the optimized build
 npm run preview
 ```
+
+### 🛠️ Developer Workflows (Pro Tools)
+
+If you are using an agentic environment (like Antigravity), use these integrated commands:
+- **`/build`**: Execute the standard production build pipeline
+- **`/deploy`**: Full checklist for Vercel/Supabase deployment
 
 ---
 
