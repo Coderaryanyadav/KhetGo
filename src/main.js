@@ -2247,6 +2247,12 @@ function bindEvents() {
   if (khataForm) {
     khataForm.onsubmit = async (e) => {
       e.preventDefault();
+
+      if (!state.user || !state.user.id) {
+        showToast('You must be logged in to record transactions', 'error');
+        return;
+      }
+
       const d = new FormData(khataForm);
       const { error } = await supabase.from('ledger_entries').insert([{
         user_id: state.user.id,
@@ -2254,11 +2260,14 @@ function bindEvents() {
         amount: parseFloat(d.get('amount')),
         type: d.get('type')
       }]);
+
       if (!error) {
         showToast('Ledger entry committed successfully', 'success');
-        fetchAllData();
+        khataForm.reset();
+        await fetchAllData();
       } else {
-        showToast(error.message, 'error');
+        console.error('Ledger Error:', error);
+        showToast(`Transaction failed: ${error.message}`, 'error');
       }
     };
   }
